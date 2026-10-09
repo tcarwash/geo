@@ -34,7 +34,13 @@ All routes are under `/api/v1` except `/healthz` and FastAPI's `/docs`.
 | `GET /natural-events/{wildfires%7Cvolcanoes%7Cfloods%7Csevere-storms}` | NASA EONET active event points and perimeters, with a five-minute cache and last-good stale fallback |
 | `GET /aurora` | NOAA SWPC OVATION forecast converted to GeoJSON probability points |
 | `GET /space-weather` | Recent NOAA planetary K-index observations |
+| `GET /muf` | NOAA SWPC WAM-IPE global MUF forecast image and valid time |
+| `GET /storm-tracks` | Current NOAA NHC tropical storm forecast tracks and centers |
+| `GET /psk-reporter?callsign=N0CALL&latitude=45&longitude=-122` | Six-hour PSK Reporter receive paths from the configured station to receiver Maidenhead grids |
+| `GET /rbn-spots` | Recent Reverse Beacon Network spots; paths where both station grids are available |
+| `GET /dx-cluster-spots` | Recent DX-cluster paths between DXCC entity centroid estimates |
 | `GET /satellites/{catalog_id}` | Admin-enabled CelesTrak TLE elements cached for two hours and locally propagated to a current point plus date-line-safe ground track |
+| `GET /goes-satellites` | Current GOES-19/East and GOES-18/West subsatellite points plus short SGP4 ground tracks |
 | `POST /adif/import?filename=log.adi&replace_existing=false` | Import UTF-8 ADIF text in the raw request body; stores parsed contacts and counts unresolved grids |
 | `GET /adif/contacts?band=20m&mode=FT8&after=...&before=...` | Filter/paginate stored contacts and return their GeoJSON point features |
 | `GET /layouts`, `POST /layouts`, `GET/PUT/DELETE /layouts/{id}` | Shared revisioned layouts; writes use `If-Match: "revision"` |
@@ -45,4 +51,4 @@ Provider responses use the envelope in `PROJECT_SPEC.md`: source, observation/fo
 
 ## Current boundary
 
-Implemented: persistent state API, revision conflict handling, optional write token, USGS earthquake feed, NOAA OVATION and planetary K-index feeds, ADIF import/query with Maidenhead conversion, CelesTrak TLE retrieval with local SGP4 propagation, and Compose packaging. Still planned: bundled Natural Earth delivery, NASA GIBS product selection, app authentication beyond the optional shared write token, backup restore automation, frontend integration, and real deployment-host provider checks. See `PROJECT_SPEC.md` for the full milestone and verification matrix.
+Implemented: persistent state API, revision conflict handling, optional write token, USGS earthquake feed, NOAA OVATION, planetary K-index and WAM-IPE MUF feeds, NHC storm tracks, PSK Reporter/RBN/DX-cluster feeds, ADIF import/query with Maidenhead conversion, CelesTrak TLE retrieval with local SGP4 propagation, and Compose packaging. EUMETSAT's separate global geostationary-ring infrared layer, NASA GIBS GOES/Himawari white cloud imagery, GPM IMERG precipitation, and NOAA SWPC D-RAP absorption are rendered by the frontend from public sources. See `PROJECT_SPEC.md` for the full milestone and verification matrix.

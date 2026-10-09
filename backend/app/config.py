@@ -21,7 +21,7 @@ class Settings:
 
 def load_settings() -> Settings:
     catalog_ids: list[int] = []
-    for raw_id in _csv(os.getenv("GEO_SATELLITE_CATALOG_IDS", "25544"))[:10]:
+    for raw_id in _csv(os.getenv("GEO_SATELLITE_CATALOG_IDS", "25544,51850,60133"))[:10]:
         try:
             catalog_id = int(raw_id)
         except ValueError:

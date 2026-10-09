@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -130,6 +130,18 @@ def layers() -> dict[str, Any]:
             {"id": "satellites", "name": "Satellite tracks", "kind": "computed", "status": "available", "source": "CelesTrak TLE plus local SGP4", "endpoint": "/api/v1/satellites/{catalog_id}"},
             {"id": "adif", "name": "ADIF contacts", "kind": "user-data", "status": "available", "source": "User-provided ADIF import", "endpoint": "/api/v1/adif/import"},
             {"id": "imagery", "name": "Satellite imagery", "kind": "raster", "status": "available", "source": "NASA GIBS dated MODIS Terra"},
+            {"id": "muf", "name": "Maximum usable frequency", "kind": "raster", "status": "available", "source": "NOAA SWPC WAM-IPE", "endpoint": "/api/v1/muf"},
+            {"id": "satellite-weather", "name": "Satellite weather", "kind": "raster", "status": "available", "source": "NASA GIBS · GOES ABI GeoColor"},
+            {"id": "clouds", "name": "Satellite clouds (white)", "kind": "raster", "status": "available", "source": "NASA GIBS GOES ABI and Himawari AHI clean infrared; approximate white cloud rendering; refreshed every 10 minutes"},
+            {"id": "eumetsat-clouds", "name": "Global cloud composite", "kind": "raster", "status": "available", "source": "EUMETSAT Geostationary Ring IR10.8 μm multimission composite; refreshed about every 3 hours with gaps toward the poles"},
+            {"id": "hf-absorption", "name": "HF radio absorption", "kind": "raster", "status": "available", "source": "NOAA SWPC D-RAP global absorption-frequency map; refreshed every minute"},
+            {"id": "precipitation", "name": "Precipitation rate", "kind": "raster", "status": "available", "source": "NASA GPM IMERG 30-minute global precipitation-rate imagery"},
+            {"id": "lightning", "name": "Lightning density", "kind": "raster", "status": "available", "source": "NOAA nowCOAST WMS"},
+            {"id": "storms", "name": "Tropical storm tracks", "kind": "vector", "status": "available", "source": "NOAA National Hurricane Center", "endpoint": "/api/v1/storm-tracks"},
+            {"id": "pskreporter", "name": "PSK Reporter paths", "kind": "vector", "status": "available", "source": "PSK Reporter", "endpoint": "/api/v1/psk-reporter"},
+            {"id": "goes-track", "name": "GOES satellite positions", "kind": "vector", "status": "available", "source": "CelesTrak SGP4 · GOES-19 / GOES-18", "endpoint": "/api/v1/goes-satellites"},
+            {"id": "rbn", "name": "Reverse Beacon Network", "kind": "vector", "status": "available", "source": "Vail ReRBN", "endpoint": "/api/v1/rbn-spots"},
+            {"id": "dx-cluster", "name": "DX Cluster paths", "kind": "vector", "status": "available", "source": "DXClusterAPI", "endpoint": "/api/v1/dx-cluster-spots"},
         ],
         "generatedAt": _now(),
     }
@@ -163,6 +175,58 @@ async def natural_event_feed(request: Request, category: str) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "Natural-event data is unavailable and no cached response exists."}) from None
 
 
+@app.get("/api/v1/muf", tags=["data"])
+async def muf_feed(request: Request) -> dict[str, Any]:
+    try:
+        return await sources.muf_forecast(request.app.state.http)
+    except (httpx.HTTPError, TypeError, ValueError, json.JSONDecodeError):
+        logger.warning("NOAA WAM-IPE MUF feed unavailable", exc_info=True)
+        raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "MUF forecast data is unavailable and no cached response exists."}) from None
+
+
+@app.get("/api/v1/psk-reporter", tags=["radio"])
+async def psk_reporter_feed(
+    request: Request,
+    callsign: str = Query(min_length=3, max_length=16),
+    latitude: float = Query(ge=-90, le=90),
+    longitude: float = Query(ge=-180, le=180),
+) -> dict[str, Any]:
+    try:
+        return await sources.psk_reporter_paths(request.app.state.http, callsign, latitude, longitude)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail={"code": "invalid_callsign", "message": str(error)}) from None
+    except (httpx.HTTPError, TypeError, json.JSONDecodeError):
+        logger.warning("PSK Reporter feed unavailable", exc_info=True)
+        raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "PSK Reporter data is unavailable and no cached response exists."}) from None
+
+
+@app.get("/api/v1/rbn-spots", tags=["radio"])
+async def rbn_spot_feed(request: Request) -> dict[str, Any]:
+    try:
+        return await sources.rbn_spots(request.app.state.http)
+    except (httpx.HTTPError, TypeError, ValueError, json.JSONDecodeError):
+        logger.warning("Reverse Beacon Network feed unavailable", exc_info=True)
+        raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "Reverse Beacon Network data is unavailable and no cached response exists."}) from None
+
+
+@app.get("/api/v1/dx-cluster-spots", tags=["radio"])
+async def dx_cluster_spot_feed(request: Request) -> dict[str, Any]:
+    try:
+        return await sources.dx_cluster_spots(request.app.state.http)
+    except (httpx.HTTPError, TypeError, ValueError, json.JSONDecodeError):
+        logger.warning("DX cluster feed unavailable", exc_info=True)
+        raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "DX cluster data is unavailable and no cached response exists."}) from None
+
+
+@app.get("/api/v1/storm-tracks", tags=["data"])
+async def storm_track_feed(request: Request) -> dict[str, Any]:
+    try:
+        return await sources.storm_tracks(request.app.state.http)
+    except (httpx.HTTPError, TypeError, ValueError, json.JSONDecodeError):
+        logger.warning("NHC storm-track feed unavailable", exc_info=True)
+        raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "NHC storm-track data is unavailable and no cached response exists."}) from None
+
+
 @app.get("/api/v1/aurora", tags=["data"])
 async def aurora_feed(request: Request) -> dict[str, Any]:
     try:
@@ -192,6 +256,17 @@ async def satellite_feed(request: Request, catalog_id: int) -> dict[str, Any]:
     except httpx.HTTPError:
         logger.warning("CelesTrak element feed unavailable", exc_info=True)
         raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "Satellite elements are unavailable and no cached response exists."}) from None
+
+
+@app.get("/api/v1/goes-satellites", tags=["data"])
+async def goes_satellites_feed(request: Request) -> dict[str, Any]:
+    if any(catalog_id not in settings.satellite_catalog_ids for catalog_id in sources.GOES_CATALOG_IDS.values()):
+        raise HTTPException(status_code=404, detail={"code": "satellite_not_enabled", "message": "GOES satellites are not enabled by the server administrator."})
+    try:
+        return await sources.goes_satellite_tracks(request.app.state.http)
+    except (ValueError, httpx.HTTPError, TypeError):
+        logger.warning("CelesTrak GOES element feed unavailable", exc_info=True)
+        raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "GOES satellite positions are unavailable and no cached response exists."}) from None
 
 
 @app.post("/api/v1/adif/import", status_code=201, tags=["radio"], dependencies=[Depends(_edit_access)])

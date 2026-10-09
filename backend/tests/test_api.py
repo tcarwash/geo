@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 from dataclasses import replace
+from datetime import UTC, datetime
+from io import BytesIO
 from pathlib import Path
+from zipfile import ZipFile
 
 import httpx
 import pytest
@@ -10,6 +14,62 @@ from fastapi.testclient import TestClient
 
 from app import adif, db, sources
 from app.main import app
+
+
+def test_radio_path_adapters_use_reported_and_estimated_locations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(db, "settings", replace(db.settings, database_path=tmp_path / "radio-test.sqlite3"))
+    db.initialize()
+    now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    calls = []
+
+    def response(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.url.host == "retrieve.pskreporter.info":
+            return httpx.Response(200, text='<receptionReports><receptionReport receiverCallsign="W1AW" receiverLocator="FN31pr" frequency="14074000" flowStartSeconds="1791500000"/></receptionReports>')
+        if request.url.host == "vailrerbn.com":
+            return httpx.Response(200, json={"spots": [
+                {"id": 1, "callsign": "W1AW", "grid": "FN31pr", "spotter": "K1ABC", "spotter_grid": "FN42aa", "frequency": 14074, "mode": "FT8", "timestamp": now},
+                {"id": 2, "callsign": "K2ABC", "grid": "FN20", "spotter": "N0CALL", "spotter_grid": None, "frequency": 7000, "mode": "CW", "timestamp": now},
+            ]})
+        return httpx.Response(200, json=[{"spotter": "K1ABC", "spotted": "W1AW", "frequency": 14074, "when": now,
+            "dxcc_spotter": {"lng": -75, "lat": 42}, "dxcc_spotted": {"lng": -72, "lat": 41}}])
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as http:
+            psk = await sources.psk_reporter_paths(http, "N0CALL", 45.64, -122.66)
+            rbn = await sources.rbn_spots(http)
+            dx = await sources.dx_cluster_spots(http)
+        return psk, rbn, dx
+
+    psk, rbn, dx = asyncio.run(run())
+    assert psk["data"]["features"][0]["geometry"]["type"] == "LineString"
+    assert psk["data"]["features"][0]["properties"]["precision"] == "reported Maidenhead grid"
+    assert [feature["geometry"]["type"] for feature in rbn["data"]["features"]] == ["LineString", "Point"]
+    assert dx["data"]["features"][0]["properties"]["precision"] == "DXCC entity centroid estimate"
+    assert len(calls) == 3
+
+
+def test_nhc_storm_track_extracts_forecast_line_and_current_center(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(db, "settings", replace(db.settings, database_path=tmp_path / "storm-test.sqlite3"))
+    db.initialize()
+    archive = BytesIO()
+    with ZipFile(archive, "w") as kmz:
+        kmz.writestr("storm.kml", '<kml><LineString><coordinates>-80,20,0 -79,21,0 -78,22,0</coordinates></LineString></kml>')
+
+    def response(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("CurrentStorms.json"):
+            return httpx.Response(200, json={"activeStorms": [{"id": "AL012026", "name": "Test", "longitudeNumeric": -80, "latitudeNumeric": 20,
+                "forecastTrack": {"kmzFile": "https://www.nhc.noaa.gov/test.kmz"}}]})
+        return httpx.Response(200, content=archive.getvalue())
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as http:
+            return await sources.storm_tracks(http)
+
+    result = asyncio.run(run())
+    features = result["data"]["features"]
+    assert [feature["geometry"]["type"] for feature in features] == ["LineString", "Point"]
+    assert features[0]["geometry"]["coordinates"][-1] == [-78, 22]
 
 
 @pytest.fixture
@@ -248,6 +308,11 @@ async def test_eonet_active_events_keep_point_and_perimeter_features_and_cache(t
 def test_eonet_endpoint_rejects_unknown_layer_and_lists_new_layers(client: TestClient):
     catalog = client.get("/api/v1/layers").json()["layers"]
     assert {"wildfires", "volcanoes", "floods", "severe-storms"}.issubset({layer["id"] for layer in catalog})
+    clouds = next(layer for layer in catalog if layer["id"] == "clouds")
+    assert "GOES ABI and Himawari AHI clean infrared" in clouds["source"]
+    composite = next(layer for layer in catalog if layer["id"] == "eumetsat-clouds")
+    assert "Geostationary Ring IR10.8" in composite["source"]
+    assert {"hf-absorption", "precipitation"}.issubset({layer["id"] for layer in catalog})
     response = client.get("/api/v1/natural-events/not-a-category")
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "unknown_event_category"
@@ -294,3 +359,26 @@ async def test_celestrak_elements_are_propagated_locally(tmp_path: Path, monkeyp
     # An ID is validated before any provider request is made.
     with pytest.raises(ValueError):
         await sources.satellite_track(client, 0)
+
+
+@pytest.mark.asyncio
+async def test_goes_tracks_combine_current_east_and_west_positions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(db, "settings", replace(db.settings, database_path=tmp_path / "goes-test.sqlite3"))
+    db.initialize()
+
+    async def fake_track(_client: httpx.AsyncClient, catalog_id: int):
+        name = "GOES 19" if catalog_id == 60133 else "GOES 18"
+        return {
+            "dataTime": "2026-10-09T00:00:00Z",
+            "validFrom": "2026-10-09T20:00:00Z",
+            "data": {"type": "FeatureCollection", "features": [{
+                "type": "Feature", "geometry": {"type": "Point", "coordinates": [-75.2 if catalog_id == 60133 else -137.0, 0]},
+                "properties": {"role": "current-position", "name": name, "catalogId": catalog_id, "epoch": "2026-10-09T00:00:00Z"},
+            }]},
+        }
+
+    monkeypatch.setattr(sources, "satellite_track", fake_track)
+    async with httpx.AsyncClient() as client:
+        result = await sources.goes_satellite_tracks(client)
+    assert [feature["properties"]["platform"] for feature in result["data"]["features"]] == ["GOES-East", "GOES-West"]
+    assert [feature["properties"]["imageProduct"] for feature in result["data"]["features"]] == ["GOES ABI GeoColor"] * 2

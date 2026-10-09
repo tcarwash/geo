@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import math
+import re
+import xml.etree.ElementTree as ET
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from typing import Any
+from zipfile import BadZipFile, ZipFile
 
 import httpx
 from sgp4.api import WGS72, Satrec, jday
 from sgp4.propagation import gstime
 
-from . import cache
+from . import adif, cache
 
 USGS_FEEDS = {
     "hour": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson",
@@ -26,6 +31,12 @@ EONET_CATEGORIES = {
     "floods": "floods",
     "severe-storms": "severeStorms",
 }
+PSK_REPORTS = "https://retrieve.pskreporter.info/query"
+NHC_STORMS = "https://www.nhc.noaa.gov/CurrentStorms.json"
+WAM_IPE_INDEX = "https://services.swpc.noaa.gov/images/animations/wam-ipe/wfs_ionosphere_new/"
+RBN_SPOTS = "https://vailrerbn.com/api/v1/spots"
+DXCLUSTER_SPOTS = "https://dxc.jo30.de/dxcache/spots"
+GOES_CATALOG_IDS = {"GOES-East": 60133, "GOES-West": 51850}
 
 
 def _parse_epoch_ms(value: Any) -> str | None:
@@ -128,6 +139,208 @@ async def natural_events(client: httpx.AsyncClient, category: str) -> dict[str, 
         )
 
     return await cache.get_or_fetch(f"nasa:eonet:{category}", fetch)
+
+
+async def muf_forecast(client: httpx.AsyncClient) -> dict[str, Any]:
+    async def fetch() -> dict[str, Any]:
+        response = await client.get(WAM_IPE_INDEX)
+        response.raise_for_status()
+        names = set(re.findall(r"WFS_IPE05_GLOBAL_TEC-MUF-TEC-MUF_(\d{8}T\d{4})_(\d{8}T\d{4})\.png", response.text))
+        if not names:
+            raise TypeError("NOAA WAM-IPE index contains no global MUF imagery")
+        now = datetime.now(UTC)
+        parsed = []
+        for init, valid in names:
+            try:
+                initialized = datetime.strptime(init, "%Y%m%dT%H%M").replace(tzinfo=UTC)
+                valid_time = datetime.strptime(valid, "%Y%m%dT%H%M").replace(tzinfo=UTC)
+            except ValueError:
+                continue
+            if initialized <= now + timedelta(minutes=15):
+                parsed.append((initialized, valid_time, init, valid))
+        if not parsed:
+            raise TypeError("NOAA WAM-IPE index contains no current forecast frames")
+        initialized, valid_time, init, valid = max(parsed)
+        filename = f"WFS_IPE05_GLOBAL_TEC-MUF-TEC-MUF_{init}_{valid}.png"
+        return cache.envelope(
+            source="noaa-swpc-wam-ipe",
+            kind="forecast",
+            data={"imageUrl": WAM_IPE_INDEX + filename, "model": "WAM-IPE", "units": "MHz"},
+            attribution="NOAA Space Weather Prediction Center · WAM-IPE",
+            documentation_url="https://www.swpc.noaa.gov/products/wam-ipe",
+            data_time=initialized.isoformat(timespec="seconds").replace("+00:00", "Z"),
+            valid_from=valid_time.isoformat(timespec="seconds").replace("+00:00", "Z"),
+            units={"frequency": "MHz"},
+            ttl_seconds=300,
+        )
+
+    return await cache.get_or_fetch("noaa:wam-ipe:muf", fetch)
+
+
+async def psk_reporter_paths(
+    client: httpx.AsyncClient, callsign: str, latitude: float, longitude: float
+) -> dict[str, Any]:
+    call = callsign.strip().upper()
+    if not re.fullmatch(r"[A-Z0-9/]{3,16}", call):
+        raise ValueError("callsign must be 3 to 16 letters, numbers, or slashes")
+
+    async def fetch() -> dict[str, Any]:
+        response = await client.get(
+            PSK_REPORTS,
+            params={"senderCallsign": call, "flowStartSeconds": -21600, "rptlimit": 500, "rronly": 1, "nolocator": 0},
+        )
+        response.raise_for_status()
+        try:
+            root = ET.fromstring(response.content)
+        except ET.ParseError as error:
+            raise TypeError("PSK Reporter response is not valid XML") from error
+        features = []
+        for report in root.iter():
+            if report.tag.rsplit("}", 1)[-1] != "receptionReport":
+                continue
+            attrs = report.attrib
+            receiver = str(attrs.get("receiverCallsign", "")).strip().upper()
+            grid = str(attrs.get("receiverLocator", "")).strip().upper()
+            position = adif.parse_locator(grid)
+            if not receiver or not position:
+                continue
+            try:
+                frequency = int(attrs["frequency"]) if attrs.get("frequency") else None
+                observed = datetime.fromtimestamp(int(attrs["flowStartSeconds"]), UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+            except (KeyError, ValueError, OSError, OverflowError):
+                observed, frequency = None, None
+            features.append({
+                "type": "Feature",
+                "id": f"{call}:{receiver}:{grid}:{frequency}:{observed}",
+                "geometry": {"type": "LineString", "coordinates": [[longitude, latitude], [position[0], position[1]]]},
+                "properties": {"sender": call, "receiver": receiver, "receiverLocator": grid, "frequencyHz": frequency, "observedAt": observed, "precision": "reported Maidenhead grid"},
+            })
+        return cache.envelope(
+            source="psk-reporter", kind="observation", data={"type": "FeatureCollection", "features": features},
+            attribution="PSK Reporter · amateur radio reception reports",
+            documentation_url="https://www.pskreporter.info/pskdev.html", data_time=_now_iso(), ttl_seconds=300,
+        )
+
+    return await cache.get_or_fetch(f"psk:paths:{call}:{latitude:.4f}:{longitude:.4f}", fetch)
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+async def rbn_spots(client: httpx.AsyncClient) -> dict[str, Any]:
+    async def fetch() -> dict[str, Any]:
+        response = await client.get(RBN_SPOTS, params={"limit": 300})
+        response.raise_for_status()
+        payload = response.json()
+        rows = payload.get("spots") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            raise TypeError("Reverse Beacon Network response has no spots")
+        features = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            spotted = str(row.get("callsign") or "").strip().upper()
+            position = adif.parse_locator(row.get("grid"))
+            if not spotted or not position:
+                continue
+            spotter_position = adif.parse_locator(row.get("spotter_grid"))
+            geometry = {"type": "LineString", "coordinates": [[spotter_position[0], spotter_position[1]], [position[0], position[1]]]} if spotter_position else {"type": "Point", "coordinates": [position[0], position[1]]}
+            features.append({"type": "Feature", "id": f"rbn:{row.get('id', spotted)}", "geometry": geometry, "properties": {"spotter": row.get("spotter"), "spotted": spotted, "frequencyKHz": row.get("frequency"), "mode": row.get("mode"), "snrDb": row.get("snr"), "wpm": row.get("wpm"), "observedAt": row.get("timestamp"), "grid": row.get("grid"), "spotterGrid": row.get("spotter_grid"), "precision": "reported Maidenhead grid" if spotter_position else "spotted-station Maidenhead grid"}})
+        return cache.envelope(source="reverse-beacon-network", kind="observation", data={"type": "FeatureCollection", "features": features}, attribution="Reverse Beacon Network · via Vail ReRBN", documentation_url="https://www.reversebeacon.net/", data_time=_now_iso(), ttl_seconds=60)
+
+    return await cache.get_or_fetch("radio:rbn:latest", fetch)
+
+
+async def dx_cluster_spots(client: httpx.AsyncClient) -> dict[str, Any]:
+    async def fetch() -> dict[str, Any]:
+        response = await client.get(DXCLUSTER_SPOTS)
+        response.raise_for_status()
+        rows = response.json()
+        if not isinstance(rows, list):
+            raise TypeError("DX cluster response is not a spot list")
+        cutoff = datetime.now(UTC) - timedelta(hours=6)
+        features = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            try:
+                when = datetime.fromisoformat(str(row.get("when", "")))
+                if when.tzinfo is None or when < cutoff:
+                    continue
+            except ValueError:
+                continue
+            spotter = row.get("spotter")
+            spotted = row.get("spotted")
+            a, b = row.get("dxcc_spotter") or {}, row.get("dxcc_spotted") or {}
+            try:
+                p1 = (float(a["lng"]), float(a["lat"]))
+                p2 = (float(b["lng"]), float(b["lat"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not all(math.isfinite(v) for v in (*p1, *p2)) or not (-180 <= p1[0] <= 180 and -90 <= p1[1] <= 90 and -180 <= p2[0] <= 180 and -90 <= p2[1] <= 90):
+                continue
+            features.append({"type": "Feature", "id": f"dx:{spotter}:{spotted}:{row.get('frequency')}:{row.get('when')}", "geometry": {"type": "LineString", "coordinates": [list(p1), list(p2)]}, "properties": {"spotter": spotter, "spotted": spotted, "frequencyKHz": row.get("frequency"), "mode": row.get("mode"), "message": row.get("message"), "observedAt": row.get("when"), "source": row.get("source"), "precision": "DXCC entity centroid estimate"}})
+        return cache.envelope(source="dx-cluster", kind="observation", data={"type": "FeatureCollection", "features": features}, attribution="DX Cluster · via jo30.de DXClusterAPI", documentation_url="https://jo30.de/dxcluster-per-rest-json/", data_time=_now_iso(), ttl_seconds=60)
+
+    return await cache.get_or_fetch("radio:dxcluster:latest", fetch)
+
+
+async def storm_tracks(client: httpx.AsyncClient) -> dict[str, Any]:
+    async def fetch() -> dict[str, Any]:
+        response = await client.get(NHC_STORMS)
+        response.raise_for_status()
+        payload = response.json()
+        storms = payload.get("activeStorms") if isinstance(payload, dict) else None
+        if not isinstance(storms, list):
+            raise TypeError("NHC active-storm response is missing activeStorms")
+        features = []
+        for storm in storms[:30]:
+            track_url = (storm.get("forecastTrack") or {}).get("kmzFile")
+            if not track_url:
+                continue
+            track_response = await client.get(track_url)
+            track_response.raise_for_status()
+            try:
+                archive = ZipFile(BytesIO(track_response.content))
+                kml_name = next(name for name in archive.namelist() if name.lower().endswith(".kml"))
+                root = ET.fromstring(archive.read(kml_name))
+            except (OSError, ValueError, StopIteration, ET.ParseError, BadZipFile) as error:
+                raise TypeError("NHC track archive does not contain valid KML") from error
+            lines = []
+            for element in root.iter():
+                if element.tag.rsplit("}", 1)[-1] != "LineString":
+                    continue
+                coordinates = next((child.text for child in element.iter() if child.tag.rsplit("}", 1)[-1] == "coordinates" and child.text), None)
+                if not coordinates:
+                    continue
+                points = []
+                for item in coordinates.split():
+                    try:
+                        lon, lat = map(float, item.split(",")[:2])
+                    except (ValueError, TypeError):
+                        continue
+                    if -180 <= lon <= 180 and -90 <= lat <= 90:
+                        points.append([lon, lat])
+                if len(points) >= 2:
+                    lines.append(points)
+                if lines:
+                    break
+            if not lines:
+                continue
+            try:
+                lon = float(storm["longitudeNumeric"])
+                lat = float(storm["latitudeNumeric"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            props = {"name": storm.get("name"), "stormId": storm.get("id"), "classification": storm.get("classification"), "windKnots": int(storm.get("intensity") or 0), "pressureMb": int(storm.get("pressure") or 0), "observedAt": storm.get("lastUpdate"), "forecastUrl": track_url, "precision": "NHC advisory track"}
+            features.extend([
+                {"type": "Feature", "id": f"nhc-track:{storm.get('id')}", "geometry": {"type": "LineString", "coordinates": lines[0]}, "properties": props},
+                {"type": "Feature", "id": f"nhc-center:{storm.get('id')}", "geometry": {"type": "Point", "coordinates": [lon, lat]}, "properties": props},
+            ])
+        return cache.envelope(source="noaa-nhc", kind="forecast", data={"type": "FeatureCollection", "features": features}, attribution="NOAA National Hurricane Center", documentation_url="https://www.nhc.noaa.gov/gis/", data_time=_now_iso(), ttl_seconds=300)
+
+    return await cache.get_or_fetch("noaa:nhc:storm-tracks", fetch)
 
 
 async def aurora(client: httpx.AsyncClient) -> dict[str, Any]:
@@ -340,3 +553,33 @@ async def satellite_track(client: httpx.AsyncClient, catalog_id: int) -> dict[st
     )
     result["staleReason"] = elements_envelope.get("staleReason")
     return result
+
+
+async def goes_satellite_tracks(client: httpx.AsyncClient) -> dict[str, Any]:
+    async def fetch() -> dict[str, Any]:
+        tracks = await asyncio.gather(*(satellite_track(client, catalog_id) for catalog_id in GOES_CATALOG_IDS.values()))
+        features = []
+        for (platform, catalog_id), track in zip(GOES_CATALOG_IDS.items(), tracks, strict=True):
+            for feature in track["data"]["features"]:
+                feature = {**feature, "id": f"goes:{catalog_id}:{feature['properties'].get('role')}"}
+                feature["properties"] = {
+                    **feature["properties"],
+                    "platform": platform,
+                    "catalogId": catalog_id,
+                    "imageProduct": "GOES ABI GeoColor",
+                    "positionTime": track.get("validFrom"),
+                    "role": feature["properties"].get("role"),
+                }
+                features.append(feature)
+        return cache.envelope(
+            source="celestrak-goes",
+            kind="model",
+            data={"type": "FeatureCollection", "features": features},
+            attribution="GOES orbital elements from CelesTrak; NOAA GOES ABI GeoColor imagery is served by NASA GIBS.",
+            documentation_url="https://celestrak.org/norad/elements/table.php?FORMAT=tle&GROUP=goes",
+            data_time=max((track["dataTime"] for track in tracks if track.get("dataTime")), default=None),
+            valid_from=_now_iso(),
+            ttl_seconds=30,
+        )
+
+    return await cache.get_or_fetch("celestrak:goes:tracks", fetch)

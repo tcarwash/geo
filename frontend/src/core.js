@@ -32,8 +32,21 @@ export const LAYERS = [
  {id:'severe-storms',name:'Severe storms',subtitle:'NASA EONET · active events',icon:'TriangleAlert',color:'#f1ca70',on:false,opacity:.9},
  {id:'aurora',name:'Aurora forecast',subtitle:'NOAA SWPC · model',icon:'Waves',color:'#78cfab',on:false,opacity:.55},
  {id:'satellite',name:'International Space Station',subtitle:'CelesTrak · SGP4 model',icon:'Satellite',color:'#9bbfed',on:false,opacity:.9},
+ {id:'goes-track',name:'GOES satellite positions',subtitle:'GOES-19 / GOES-18 · orbital model',icon:'Satellite',color:'#9ad8ed',on:false,opacity:.95},
  {id:'maidenhead',name:'Maidenhead grid',subtitle:'Amateur radio · reference',icon:'Radio',color:'#c8a8d7',on:false,opacity:.5},
  {id:'contacts',name:'My radio contacts',subtitle:'Your imported ADIF log',icon:'Route',color:'#d7c58b',on:false,opacity:.8},
+ {id:'muf',name:'Maximum usable frequency',subtitle:'NOAA WAM-IPE · global forecast',icon:'Waves',color:'#ef70d5',on:false,opacity:.7},
+ {id:'prop-muf',name:'prop.kc2g.com MUF (3000 km)',subtitle:'Live ionosonde-derived map · vivid color scale',icon:'Waves',color:'#b0e1b5',on:false,opacity:.9},
+ {id:'satellite-weather',name:'Satellite weather',subtitle:'GOES-East/West · GeoColor',icon:'CloudSun',color:'#92d8ee',on:false,opacity:.8},
+ {id:'clouds',name:'Satellite clouds (white)',subtitle:'GOES + Himawari · infrared, refreshed every 10 min',icon:'CloudSun',color:'#d8e5ec',on:false,opacity:.72},
+ {id:'eumetsat-clouds',name:'Global cloud composite',subtitle:'EUMETSAT geostationary ring · infrared, refreshed every 3 hr',icon:'CloudSun',color:'#c6d4da',on:false,opacity:.72},
+ {id:'hf-absorption',name:'HF radio absorption',subtitle:'NOAA SWPC D-RAP · HF absorption estimate',icon:'Waves',color:'#a77be7',on:false,opacity:.72},
+ {id:'precipitation',name:'Precipitation rate',subtitle:'NASA GPM IMERG · global, 30-minute estimate',icon:'CloudRain',color:'#66b9e8',on:false,opacity:.72},
+ {id:'lightning',name:'Lightning density',subtitle:'NOAA nowCOAST · 15-minute density',icon:'CloudLightning',color:'#f0d46e',on:false,opacity:.8},
+ {id:'storms',name:'Tropical storm tracks',subtitle:'NOAA NHC · advisory forecast tracks',icon:'Wind',color:'#ff886e',on:false,opacity:.9},
+ {id:'pskreporter',name:'PSK Reporter paths',subtitle:'Your transmissions · receiver grids',icon:'RadioTower',color:'#77d9c4',on:false,opacity:.8},
+ {id:'rbn',name:'Reverse Beacon Network',subtitle:'RBN · spotter and station grids',icon:'Activity',color:'#eed275',on:false,opacity:.85},
+ {id:'dx-cluster',name:'DX Cluster paths',subtitle:'DX Cluster · country-centroid estimates',icon:'Radio',color:'#c6a4ed',on:false,opacity:.8},
 ];
 export const DEFAULT_STATE = {version:1,base:'atlas',map:{center:[20,8],zoom:null},layers:LAYERS.map(x=>({id:x.id,on:x.on,opacity:x.opacity,...(x.date?{date:x.date}:{})})),widgets:[],station:{name:'My station',callsign:'',lat:45.64,lng:-122.66,zone:Intl.DateTimeFormat().resolvedOptions().timeZone},scale:1,clocks:[{name:'Local',zone:Intl.DateTimeFormat().resolvedOptions().timeZone},{name:'London',zone:'Europe/London'},{name:'Tokyo',zone:'Asia/Tokyo'},{name:'Sydney',zone:'Australia/Sydney'}]};
 export function validZone(zone) {try {timeLabel(new Date(),zone);return typeof zone==='string'&&zone.length>0;}catch{return false;}}

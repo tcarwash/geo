@@ -73,12 +73,12 @@ Priorities below are implementation decisions. “Candidate” means access, lic
 | Maidenhead grid | P1 | Locally generated locator geometry | Zoom-adaptive grid; locator readout on tap; bounded rendering. |
 | Earthquakes | P1 | USGS GeoJSON summary feeds | Magnitude, depth, age filters; popup details; latest successful data retained on failure. |
 | Aurora | P1 | NOAA SWPC OVATION JSON | Geographic probability/intensity overlay, forecast timestamp and legend; never label the model as an observation. |
-| Solar/space weather | P1 | NOAA SWPC public products | Kp and available solar indicators in widgets; units and timestamps; unavailable values never replaced with invented data. |
+| Solar/space weather | P1 | NOAA SWPC public products | Kp widget plus D-RAP global HF absorption overlay; units, source refresh, and valid time are shown; D-RAP is not a path-specific prediction. |
 | ISS and amateur satellites | P1 | CelesTrak GP/OMM plus local SGP4 propagation | Select catalog objects; current calculated position, ground track, optional geometric footprint; display orbital epoch and stale warnings. |
 | ADIF contacts | P1 | Local user upload | Stations, contact counts, great-circle paths, filters; unknown coordinates explicitly unresolved. |
 | Night lights | P1 | NASA GIBS candidate night-light product | Static imagery with product date; optional night-only mask. Product ID and projection verified before shipping. |
-| Satellite cloud/true-color imagery | P1 | NASA GIBS WMTS/WMS | Acquisition date selector, opacity, missing-tile handling; not presented as instantaneous cloud cover. |
-| Precipitation/radar | P2 | RainViewer candidate API | Coverage and observation timestamp visible; provider caps respected; distinguish radar from global rainfall forecasts. |
+| Satellite cloud/true-color imagery | P1 | NASA GIBS and EUMETView WMS | Separate EUMETSAT near-global geostationary-ring IR composite with polar gaps, plus a faster approximate white cloud mask from 10-minute GOES + Himawari imagery. |
+| Precipitation/radar | P2 | NASA GPM IMERG through GIBS | Global 30-minute precipitation-rate overlay; distinguish satellite precipitation estimate from local radar. |
 | Wind, pressure, temperature | P2 | Candidate NOAA forecast grids or suitable public weather provider | Backend converts supported gridded data into tiles/vectors; units, model run, valid time and forecast lead shown. Public availability does not imply a ready global tile API. |
 | Live DX reception/spotting | P2 | Candidate PSK Reporter, WSPRnet, or permitted cluster feed | Separate reception reports from cluster announcements; band/mode/age filters; aggregated paths; source-specific access approval and rate limits. |
 | MUF / propagation | P2 | Candidate public ionosonde/ionospheric model source | Show spatial/time coverage and model provenance; never manufacture global coverage from sparse measurements. Select source and validate interpolation first. |

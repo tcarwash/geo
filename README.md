@@ -4,7 +4,7 @@ Geo is a self-hosted, large-display world map and clock project. Its implementat
 
 ## Current implementation
 
-The Python backend is in [backend/](backend/README.md). It provides revisioned shared layouts/settings/drawings, ADIF contact import and filters, and normalized USGS, NASA EONET, NOAA SWPC, and CelesTrak data endpoints. Run it with Docker Compose:
+The Python backend is in [backend/](backend/README.md). It provides revisioned shared layouts/settings/drawings, ADIF contact import and filters, and normalized USGS, NASA EONET, NOAA SWPC, CelesTrak, and amateur-radio spotting feeds. Run it with Docker Compose:
 
 ```sh
 cp .env.example .env
@@ -36,5 +36,7 @@ Selectable bases: Political Atlas, Grayscale, NASA Blue Marble Relief, and NASA 
 The map repeats horizontally at the date line, keeping its geographic scale consistent on wide and fullscreen displays. The bundled atlas, labels, live features, annotations, and user GeoJSON render aligned copies; raster tile sources wrap at their native world boundary. The Maidenhead overlay updates visible cells on Leaflet move/zoom/resize events without rebuilding other layers.
 
 Global natural-event layers include NASA EONET active wildfires, volcanic activity, floods, and severe storms. Their GeoJSON includes event details and source links; active events refresh through the backend cache.
+
+Additional overlays include NOAA WAM-IPE global MUF forecast imagery, prop.kc2g.com's ionosonde-derived 3000 km MUF map, NASA GIBS GOES-East/West GeoColor, a white cloud mask from GOES ABI and Himawari AHI imagery (every 10 minutes), and a separate EUMETSAT Geostationary Ring IR10.8 μm multimission composite (about every three hours). The EUMETSAT view is cohesive and near-global, with gaps toward the poles. NOAA SWPC D-RAP provides a map-aligned estimate of HF frequencies experiencing at least 1 dB absorption, refreshed every minute. NASA GPM IMERG provides a global 30-minute precipitation-rate estimate. NOAA nowCOAST supplies 15-minute lightning strike density, and NOAA NHC supplies tropical-storm forecast tracks. An optional GOES-18/19 position layer displays current subsatellite points and short ground tracks. Radio layers show PSK Reporter reception paths from the configured station callsign, Reverse Beacon Network spots, and DX-cluster spots. PSK Reporter and RBN paths use published Maidenhead grids where available; DX-cluster paths are approximate DXCC country-centroid connections and are labeled as such. Configure the station callsign and coordinates in Settings to use PSK Reporter.
 
 The pointer coordinate readout is rate-limited to 12 updates per second and ignores changes below its displayed precision, keeping pointer movement from rerendering the full interface unnecessarily.

@@ -3,13 +3,19 @@ import {glyphSVG} from './mapGlyphs.js';
 import {WORLD_OFFSETS,worldCopies} from './worldCopies.js';
 const EVENT_COLORS={wildfires:'#ff8b61',volcanoes:'#c2a0ed',floods:'#6dbfe0','severe-storms':'#f1ca70'};
 const EVENT_NAMES={wildfires:'Wildfire',volcanoes:'Volcanic event',floods:'Flood event','severe-storms':'Severe storm'};
+const RADIO_COLORS={pskreporter:'#77d9c4',rbn:'#eed275','dx-cluster':'#c6a4ed',storms:'#ff886e','goes-track':'#9ad8ed'};
 export const glyphIcon=(L,kind)=>L.divIcon({className:`map-glyph glyph-${kind}`,html:glyphSVG(kind),iconSize:[44,44],iconAnchor:[22,22]});
 export function liveLayer(L,map,id,pane,onInspect){
  const group=L.layerGroup().addTo(map),features=new Map(),routes=L.layerGroup().addTo(group);let snapshot;const animations=new Map();
  const inspect=layer=>{const f=layer.feature,p=f.properties||{};
  if(id==='earthquakes')onInspect({kind:'Earthquake',title:p.place||'Earthquake',fields:[['Magnitude',`M ${p.mag}`],['Depth',`${f.geometry.coordinates[2]} km`],['Observed',new Date(p.time).toUTCString()]],source:'U.S. Geological Survey'});
  if(id==='satellite')onInspect({kind:'Satellite model',title:p.name||'ISS',fields:[['Altitude',`${p.altitudeKm??'—'} km`],['Orbital epoch',p.epoch||'Unavailable'],['Position','Calculated with SGP4']],source:'CelesTrak'});
+ if(id==='goes-track')onInspect({kind:'Weather satellite',title:p.platform||p.name,fields:[['Image center',`${f.geometry.coordinates[1].toFixed(2)}°, ${f.geometry.coordinates[0].toFixed(2)}°`],['Image product',p.imageProduct],['Position update',new Date(p.positionTime).toUTCString()],['Orbital elements',p.epoch||'Unavailable']],source:'CelesTrak TLE · NOAA GOES'});
  if(id==='contacts')onInspect({kind:'Radio contact',title:p.callsign,fields:[['Band',p.band],['Mode',p.mode],['Contact',p.contactedAt],['Locator',p.remoteGrid]],source:'Your ADIF log'});
+ if(id==='pskreporter')onInspect({kind:'PSK Reporter path',title:`${p.sender} → ${p.receiver}`,fields:[['Receiver grid',p.receiverLocator],['Frequency',p.frequencyHz?`${(p.frequencyHz/1e6).toFixed(3)} MHz`:'Unavailable'],['Observed',p.observedAt||'Time unavailable'],['Location precision',p.precision]],source:'PSK Reporter'});
+ if(id==='rbn')onInspect({kind:'Reverse Beacon Network spot',title:`${p.spotter||'Spotter'} heard ${p.spotted}`,fields:[['Band frequency',p.frequencyKHz?`${p.frequencyKHz} kHz`:'Unavailable'],['Mode',p.mode||'—'],['SNR',p.snrDb==null?'—':`${p.snrDb} dB`],['Location precision',p.precision]],source:'Reverse Beacon Network via Vail ReRBN'});
+ if(id==='dx-cluster')onInspect({kind:'DX Cluster spot',title:`${p.spotter||'Spotter'} → ${p.spotted||'DX'}`,fields:[['Frequency',p.frequencyKHz?`${p.frequencyKHz} kHz`:'Unavailable'],['Mode',p.mode||'—'],['Observed',p.observedAt||'Time unavailable'],['Location precision',p.precision]],source:'DX Cluster via jo30.de'});
+ if(id==='storms')onInspect({kind:'Tropical storm track',title:p.name||'Active storm',fields:[['Classification',p.classification||'Unavailable'],['Maximum wind',p.windKnots?`${p.windKnots} kt`:'Unavailable'],['Pressure',p.pressureMb?`${p.pressureMb} mb`:'Unavailable'],['Advisory',p.observedAt||'Time unavailable']],source:'NOAA National Hurricane Center'});
  if(EVENT_NAMES[id])onInspect({kind:EVENT_NAMES[id],title:p.title||EVENT_NAMES[id],fields:[['Reported',p.date||'Time unavailable'],['Status',p.closed?'Closed':'Open'],['Description',p.description||'No additional details']],source:p.sources?.[0]?.url||'NASA EONET'});
  };
  return {dispose(){for(const frame of animations.values())cancelAnimationFrame(frame);animations.clear();group.clearLayers();map.removeLayer(group);features.clear();},update(data){
@@ -21,17 +27,21 @@ export function liveLayer(L,map,id,pane,onInspect){
    if(!layer){
     if(g.type==='Point'){const ll=L.GeoJSON.coordsToLatLng(g.coordinates);
      if(id==='satellite')layer=L.marker(ll,{pane,icon:glyphIcon(L,'iss'),title:p.name||'International Space Station',pmIgnore:true});
+     else if(id==='goes-track')layer=L.marker(ll,{pane,icon:glyphIcon(L,'goes'),title:`${p.platform||p.name} · image center`,pmIgnore:true});
+     else if(id==='storms'&&p.stormId)layer=L.marker(ll,{pane,icon:glyphIcon(L,'storm'),title:p.name||'Tropical storm',pmIgnore:true});
      else layer=L.circleMarker(ll,{pane,pmIgnore:true});
-    }else if(g.type==='MultiLineString'||g.type==='LineString')layer=L.polyline([],{pane,color:'#a4ccee',weight:1.7,dashArray:'5 6',interactive:false,pmIgnore:true});
+    }else if(g.type==='MultiLineString'||g.type==='LineString')layer=L.polyline([],{pane,color:RADIO_COLORS[id]||'#a4ccee',weight:1.7,dashArray:'5 6',interactive:['pskreporter','rbn','dx-cluster','storms'].includes(id),pmIgnore:true});
     else if(g.type==='Polygon'||g.type==='MultiPolygon')layer=L.polygon([],{pane,interactive:true,pmIgnore:true});
     else return;
-    features.set(key,layer);layer.addTo(group);if((id!=='aurora'&&g.type==='Point')||EVENT_NAMES[id])layer.on('click',()=>inspect(layer));
+    features.set(key,layer);layer.addTo(group);if((id!=='aurora'&&g.type==='Point')||EVENT_NAMES[id]||['pskreporter','rbn','dx-cluster','storms'].includes(id))layer.on('click',()=>inspect(layer));
    }
    layer.feature=f;
   if(g.type==='Point'){const target=L.GeoJSON.coordsToLatLng(g.coordinates),from=layer.getLatLng();if(id==='satellite'&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches&&Math.abs(target.lng-from.lng)<180){if(animations.has(key))cancelAnimationFrame(animations.get(key));const began=performance.now();const step=now=>{const t=Math.min(1,(now-began)/800),ease=t*t*(3-2*t);layer.setLatLng([from.lat+(target.lat-from.lat)*ease,from.lng+(target.lng-from.lng)*ease]);if(t<1)animations.set(key,requestAnimationFrame(step));else animations.delete(key)};animations.set(key,requestAnimationFrame(step));}else layer.setLatLng(target);}else{const depth=g.type==='LineString'?0:['MultiLineString','Polygon'].includes(g.type)?1:2;layer.setLatLngs(L.GeoJSON.coordsToLatLngs(g.coordinates,depth));}
    if(id==='earthquakes'){layer.setRadius(Math.max(3,Math.min(18,(p.mag||0)*2)));layer.setStyle({color:'#ffe2ac',weight:1,fillColor:'#e7a05f',fillOpacity:.65});}
    if(id==='aurora'){layer.setRadius(3);layer.setStyle({stroke:false,fillColor:p.probability>50?'#b5a0dd':'#6cddb2',fillOpacity:Math.max(.1,p.probability/100),interactive:false});}
    if(id==='contacts'){layer.setRadius(4);layer.setStyle({radius:4,color:'#e7d493',weight:1,fillColor:'#d2c085',fillOpacity:.65});}
+  if(['pskreporter','rbn','dx-cluster','storms'].includes(id)&&g.type!=='Point')layer.setStyle({color:RADIO_COLORS[id],weight:id==='storms'?2.8:1.8,opacity:id==='storms'?.9:.72,dashArray:id==='dx-cluster'?'4 5':id==='storms'?'':'5 6'});
+  if(['rbn','dx-cluster'].includes(id)&&g.type==='Point'){layer.setRadius(4);layer.setStyle({color:RADIO_COLORS[id],weight:1.2,fillColor:RADIO_COLORS[id],fillOpacity:.8});}
   if(EVENT_NAMES[id]){const color=EVENT_COLORS[id];if(g.type==='Point')layer.setRadius(5);layer.setStyle({color,weight:1.5,fillColor:color,fillOpacity:g.type==='Point'?.75:.22});}
   });
   for(const [key,layer] of features)if(!retained.has(key)){if(animations.has(key)){cancelAnimationFrame(animations.get(key));animations.delete(key)}group.removeLayer(layer);features.delete(key)}
