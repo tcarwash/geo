@@ -1,0 +1,212 @@
+# Geo data sources and display specification
+
+Status: source and presentation plan; integrations still require the verification noted below  
+Date: 2026-10-09  
+Companion: [PROJECT_SPEC.md](PROJECT_SPEC.md) · [STYLE_GUIDE.md](STYLE_GUIDE.md)
+
+This catalog favors documented public interfaces and bundled reference datasets. A listed source is a candidate, not evidence that Geo has integrated it. Before release, check its current terms, attribution, browser/server access, rate limits, and schema. “Documented” means the provider documents the access method; it does not imply that every requested use or redistribution is permitted.
+
+## Source status and handling
+
+- **Documented candidate**: official documentation describes an API, download, or service. Build a small integration spike and retain the source's attribution and temporal semantics.
+- **Needs access review**: an interface exists, but access, commercial use, redistribution, or rate limits need provider confirmation.
+- **Research candidate**: useful source family without a confirmed production interface. Do not make it a release dependency.
+- Keep requests in the backend where that protects credentials, allows caching, or avoids browser CORS limitations. Never put private keys in the browser.
+- Record provider, product/layer, documentation URL, acquisition time, observation time or forecast valid time, geographic coverage, units, attribution, and status with every normalized response.
+
+## Base maps and geographic reference
+
+| Layer/data | Provider and documentation | Access, coverage, timing | Terms and practical limits | Status |
+|---|---|---|---|---|
+| Political country outlines, admin-0/1, populated places, rivers, coastlines | [Natural Earth downloads](https://www.naturalearthdata.com/downloads/) | Versioned local shapefile/GeoPackage/GeoJSON; global; static release | Public domain per Natural Earth; preserve a source/version record. Small-scale data is intentionally generalized; do not use for cadastral precision. Package low-resolution data first. | Documented; P0 base |
+| Street and vector map | [OpenStreetMap data](https://www.openstreetmap.org/copyright), [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API), [vector tile providers list](https://wiki.openstreetmap.org/wiki/Vector_tiles) | OSM extracts or a separately selected tile/vector-tile host; global with uneven detail; source updates vary | ODbL attribution and database obligations apply. The public OSM raster tile service has a usage policy and is not a bulk/offline tile source. Select and review a provider before relying on hosted tiles. | Needs provider/terms selection |
+| Terrain/relief and bathymetry | [GEBCO gridded bathymetry](https://www.gebco.net/data_and_products/gridded_bathymetry_data/), [ETOPO](https://www.ncei.noaa.gov/products/etopo-global-relief-model) | Download grids and render locally; global elevation/bathymetry; release-based, not live | Check the selected release's license and attribution. Large grids need tiling/downsampling; depth and land elevation have different accuracy and provenance. | Documented datasets; spike |
+| Satellite basemap and imagery | [NASA GIBS API](https://nasa-gibs.github.io/gibs-api-docs/), [NASA Earthdata imagery guide](https://www.earthdata.nasa.gov/data/tools/gibs) | WMTS/WMS/XYZ-like tile access; many global products and projections; product-specific acquisition and latency | Product-specific notices, spatial/temporal coverage, and resolution apply. Some products require Earthdata Login. Check each layer's metadata and service terms; imagery is not necessarily current or cloud-free. | Documented; choose products |
+| Grayscale and cartographic variants | Generate from packaged Natural Earth/OSM data or an approved vector-tile style | Local style; global where underlying data exists | Styling is Geo-owned; underlying source license still applies. Keep labels, border hierarchy, and attribution consistent. | P0 local style |
+| Night lights | [NASA Black Marble](https://earthdata.nasa.gov/data/catalog/lpcloud-vnp46a1-2), available through [GIBS](https://nasa-gibs.github.io/gibs-api-docs/) for supported products | Satellite-derived global nighttime radiance products; product-specific daily/monthly composites and lag | Research product metadata, compositing interval, stray-light/cloud corrections, and license before use. Composite dates must not be presented as live city illumination. | Documented candidate; product spike |
+| Country/time-zone boundaries | [Natural Earth admin boundaries](https://www.naturalearthdata.com/downloads/), [IANA Time Zone Database](https://www.iana.org/time-zones) | Package/version boundaries; IANA TZID lookup and local clock calculation | Time-zone borders are not longitude slices; political boundary datasets have generalization/dispute limitations. Show selected IANA zone and offset. | Documented; local |
+
+## Weather, atmosphere, and severe conditions
+
+| Layer/data | Provider and documentation | Access, coverage, timing | Terms and practical limits | Status |
+|---|---|---|---|---|
+| Geostationary visible, infrared, water vapor, composites | [NASA GIBS](https://nasa-gibs.github.io/gibs-api-docs/) and [NOAA GOES-R data](https://www.goes-r.gov/mission/mission.html) | GIBS tile products or NOAA archives; GOES coverage is regional (Americas), scans/products have their own cadence and latency | Distinguish satellite observation time from tile availability. Check product-specific latency, resolution, and attribution; full-disk imagery is not global outside satellite view. | Documented candidates; product spike |
+| Global imagery and atmospheric observations | [EUMETSAT data services](https://www.eumetsat.int/what-we-do/data) and NASA GIBS | Download/API or map services; satellite-specific footprints, scan times, and latency | Some services/products require registration or have redistribution conditions. Verify exact product rights and coverage. | Needs access/product review |
+| US animated radar | [NWS RIDGE / radar services](https://www.weather.gov/radar), [NWS API docs](https://www.weather.gov/documentation/services-web-api) | Radar mosaics/services and station products; US coverage; scans typically minutes apart, with source-dependent processing delay | Radar is an observation with beam-height, range, blockage, and precipitation-type limitations. Determine a supported tile/service endpoint and policy before implementation. | Research/integration spike |
+| Global precipitation and cloud products | [NASA GPM](https://gpm.nasa.gov/data), [GIBS](https://nasa-gibs.github.io/gibs-api-docs/) | Satellite/gridded products, global with orbit/composite intervals; latency varies from near-real-time to retrospective | Not a direct substitute for local radar. Display accumulation interval, units, product version, and observation/composite window. | Documented candidates |
+| Forecast, hourly forecast, grid fields, stations, alerts | [National Weather Service API](https://www.weather.gov/documentation/services-web-api), [alerts docs](https://www.weather.gov/documentation/services-web-alerts) | JSON-LD API; US and territories; point-to-grid lookup, forecast valid periods, station observations, CAP alerts | NWS describes the data as open for any purpose, with reasonable rate limits; send a descriptive User-Agent and honor cache headers. Forecasts are predictions; observations and alerts are separate products. NWS recommends no more than one alert request every 30 seconds. | Documented; US coverage |
+| Forecast models, global wind/temperature/pressure | [NOAA NOMADS](https://nomads.ncep.noaa.gov/), [NOAA Global Forecast System](https://www.ncei.noaa.gov/products/weather-climate-models/global-forecast) | GRIB/model downloads; global forecast grids; model cycle and forecast lead times | Not an observation. Large data volume; select fields/resolution and use a backend extractor/cache. Verify dissemination terms and operational availability. | Documented candidate; spike |
+| Warnings outside US | [WMO Severe Weather Information Centre](https://severeweather.wmo.int/), national meteorological services | National/regional feeds vary; validity windows and update cadence provider-specific | No uniform global API, schema, or redistribution right. Add country providers only after review. | Research candidate |
+| Air quality | [OpenAQ API](https://docs.openaq.org/) and [WHO air quality resources](https://www.who.int/teams/environment-climate-change-and-health/air-quality-and-health) | Station observations through API; global but uneven station coverage; observation timestamps vary | API access/keys and current terms depend on service plan. Measurements are station-local, not a continuous global field; preserve pollutant, units, averaging interval, and station identity. | Documented candidate; access check |
+
+### Weather time controls
+
+Weather layers expose a frame timeline, play/pause, step/back, selected valid time, and “latest available” action. Mark each frame as **observed**, **derived/composite**, or **forecast/model** in both legend and details. Show acquisition/analysis time, valid time or accumulation window, fetch time, coverage footprint, provider, and units. Never interpolate missing frames as if they were measurements. Keep the last successful frame on fetch failure and mark it stale. The time slider controls only layers that support historical frames; live-only layers keep a visible “live” badge.
+
+Use variable-specific legends: radar reflectivity and precipitation use sequential ramps with documented units and scan or accumulation interval; temperature uses a perceptually ordered ramp (or a diverging ramp only when centered on a meaningful reference such as freezing); pressure uses labeled isobars or a sequential field; wind uses direction glyphs plus a magnitude ramp. Cloud and satellite imagery remain imagery layers with product/time labels, not an unlabeled “weather” tint. Keep radar coverage and satellite footprints visible so blank areas are not mistaken for clear conditions.
+
+## Lightning
+
+| Layer/data | Provider and documentation | Access, coverage, timing | Terms and practical limits | Status |
+|---|---|---|---|---|
+| Geostationary lightning mapper | [NOAA GOES-R GLM](https://www.goes-r.gov/spacesegment/glm.html), [NASA GIBS](https://nasa-gibs.github.io/gibs-api-docs/) | GLM observes the Americas from geostationary orbit; event/group products and imagery have product-specific latency and cadence | Sensor coverage is regional; it does not see the entire Earth. Confirm product endpoint, redistribution rights, and whether a selected GIBS layer is near-real-time or archived. | Documented candidate |
+| Global ground-network lightning | [Meteorage](https://www.meteorage.com/), [Vaisala Xweather lightning](https://www.xweather.com/weather-data/lightning) | Commercial API/data services; network coverage and latency depend on contract | Paid/licensed; authentication and redistribution terms required. Do not scrape consumer maps. | Needs subscription/contract |
+| Community detector network | [Blitzortung](https://www.blitzortung.org/) | Community receivers; regional/variable network coverage; live maps exist | Public map visibility does not establish an API or redistribution permission. Obtain and document permission before ingesting or republishing. | Needs written permission |
+| Local lightning sensor | User-owned ESPHome/device integration; [ESPHome documentation](https://esphome.io/) | Single station or receiver footprint; device-specific event stream | Treat as local observations, store station location and sensor model, and avoid implying uniform detection efficiency. No global coverage. | Local/custom |
+| Historical lightning climatology | [NASA Earthdata / LIS](https://earthdata.nasa.gov/data/instruments/lis) | Satellite climatology and mission archives; regional/orbit-limited products and long aggregation periods | Historical sampling is not a live strike feed. Preserve mission, dates, and aggregation method. | Documented research candidate |
+
+### Lightning display
+
+Use a small warm-white/yellow bolt with a dark halo for individual strikes. Recent events may have a brief, reduced-motion-safe pulse that fades by age; clustering replaces dense marks at small scales. A heat or climatology mode uses a separate sequential ramp and is never mixed visually with individual live detections without a clear legend. Popup fields: event time in UTC, sensor/network, location/uncertainty if supplied, detection type, and source freshness. Do not imply that an empty layer means no lightning where sensor coverage is absent.
+
+## Earthquakes, volcanoes, fires, and natural hazards
+
+| Layer/data | Provider and documentation | Access, coverage, timing | Terms and practical limits | Status |
+|---|---|---|---|---|
+| Recent and historical earthquakes | [USGS GeoJSON feeds](https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php), [ComCat/FDSN API](https://earthquake.usgs.gov/fdsnws/event/1/) | Summary feeds updated about every minute; global catalog; query API supports time, region, magnitude | USGS recommends summary feeds for automated recent-event maps. Event locations, magnitudes, and products may be revised. Retain event update time and link to detail; use feed lifecycle policy. | Documented; P1 |
+| Shake intensity and event products | [USGS ComCat products](https://earthquake.usgs.gov/data/comcat/), [ShakeMap](https://earthquake.usgs.gov/data/shakemap/) | Per-event products where available; coverage follows reviewed/processed event products | Products are not available for every event and can update after initial posting. Show product update time and provenance; intensity is not the same as magnitude. | Documented candidate |
+| Volcano activity | [Smithsonian Global Volcanism Program](https://volcano.si.edu/), [USGS Volcano Hazards Program](https://www.usgs.gov/programs/VHP) | Catalog and agency reports; global catalog plus regional live notices; irregular/event-driven | Separate long-term volcano locations from current alerts. Check dataset/API reuse terms and the update cadence of each feed. | Needs source/API spike |
+| Tsunami alerts | [NOAA Tsunami Warning Centers](https://www.tsunami.gov/), [IOC tsunami information](https://tsunami.ioc.unesco.org/) | Official regional warning products; event-driven and region-specific | Do not treat a map scrape as an alert feed. Identify authoritative feeds, update/expiry semantics, and redistribution rights before enabling notifications. | Research candidate |
+| Active fires and thermal anomalies | [NASA FIRMS](https://firms.modaps.eosdis.nasa.gov/), [FIRMS API](https://firms.modaps.eosdis.nasa.gov/api/) | Satellite detections; global/regional feeds with near-real-time and archive products; satellite overpass-dependent | API key required. A hotspot is a sensor detection, not a confirmed wildfire perimeter. Display satellite, confidence, acquisition time, and FIRMS attribution/terms. | Documented; key/access review |
+| Floods, drought, landslides | [NASA Disasters](https://disasters.nasa.gov/), [Copernicus Emergency Management Service](https://emergency.copernicus.eu/) | Event and derived products; coverage and update times vary | Many are event-specific products, not a continuous global live feed. Review licensing and product provenance. | Research candidate |
+
+### Event symbol and detail rules
+
+Earthquakes use a circle with magnitude encoded by area and age by fading; depth uses an optional labeled ramp, never color alone. Default filters are magnitude, age, and event type. Selected events can show a felt/intensity footprint only when an authoritative product exists. Volcano symbols distinguish permanent vent locations from current activity. Fire points show confidence and acquisition time. Hazard overlays sit above base-map shading but below selected features and annotations. No hazard symbol is a substitute for an official warning.
+
+## Amateur radio and station data
+
+Radio feeds are especially sensitive to terms and redistribution. Before shipping an online feed, confirm both automated access and permission to display or retain the resulting spots. User-supplied logs and a user's own station telemetry have different rights from third-party reports.
+
+| Layer/data | Provider and documentation | Access, coverage, timing | Terms and practical limits | Status |
+|---|---|---|---|---|
+| User station identity, location, bands, antenna | Geo settings and user entry; optional local integration | Local configuration; user-defined update | Private by default. Do not publish exact station location unless enabled. Store callsign/grid/coordinates separately with explicit precision choice. | P0/P1 local |
+| ADIF contacts | [ADIF specification](https://www.adif.org/), user upload | Local file import; time span and station coverage come from log | User-provided data. Parse versioned fields, preserve original file or offer deletion, and do not assume a contact has a resolvable coordinate. Grid is approximate; exact station coordinates may be private. | P1 local |
+| DX cluster spots | [DXSpider documentation](https://www.dxcluster.org/), individual cluster operator docs | Commonly telnet/cluster protocol; regional/global networks; near-real-time reports | No single authoritative global endpoint or uniform reuse policy. Operator access rules, credentials, and spot redistribution must be checked. Prefer user-configured cluster; do not hard-code a public node. | Needs operator choice/terms |
+| PSK Reporter reception reports | [PSK Reporter](https://pskreporter.info/) | Web maps and query/service mechanisms have existed; reports are crowd-sourced and delayed/coverage-biased | No public API/redistribution contract is assumed by this plan. Ask maintainers for current supported API, rate limits, and reuse permission before integration. A report is reception evidence, not a guaranteed propagation path. | Needs written confirmation |
+| WSPR spots | [WSPRnet](https://wsprnet.org/), [WSPR protocol](https://wsprnet.org/drupal/) | Crowdsourced spots, typically queried from service/database; receiver network coverage is uneven | Current supported API, query limits, and redistribution terms require confirmation. Do not scrape the website or overload the service. Preserve reporter, frequency, SNR, timestamp, and reported power where supplied. | Needs access review |
+| Reverse Beacon Network | [RBN](https://reversebeacon.net/) | Crowdsourced CW/RTTY/FT reports; cluster/telnet access may be available | Confirm current endpoint, authentication, feed stability, and reuse permission with operators. Reports reflect participating skimmers and decoding conditions. | Needs access review |
+| Fixed HF propagation beacons | [NCDXF/IARU International Beacon Project locations](https://www.ncdxf.org/beacon/beaconlocations.html) and [transmission schedule](https://www.ncdxf.org/beacon/index.html) | Fixed beacon locations and published schedule; the project repeats a staggered transmission cycle every three minutes across amateur HF bands | Treat locations and schedule as reference data; verify how to consume current operational/off-air status before automating. A scheduled transmission is not proof that it was received locally. Use reception reports from a permitted receiver/spot source for observed paths. | Documented reference; status integration spike |
+| POTA activations/spots | [Parks on the Air](https://parksontheair.com/), [POTA API](https://api.pota.app/) | API-backed spots/park references; event-driven; primarily supported parks and activations | Review current API docs, rate limits, and POTA terms before caching/redistributing. A spot can be stale or user-submitted; show report age. | Documented candidate; terms spike |
+| SOTA spots and summits | [SOTA database and resources](https://www.sota.org.uk/), [SOTAwatch](https://sotawatch.sota.org.uk/) | Web/service data for summit references and spots; event-driven, worldwide program coverage | Confirm supported API and data reuse terms; do not scrape without permission. Summit activation reports are not a live station location guarantee. | Needs access review |
+| Repeaters | [RepeaterBook](https://www.repeaterbook.com/), [RadioReference](https://www.radioreference.com/) | Provider databases; national/regional, community-maintained | Licensing, API availability, attribution, and redistribution differ. Do not harvest site pages. A locator layer can also import user-owned CSV/GeoJSON. | Needs provider/terms selection |
+| APRS stations and packets | [APRS-IS documentation](https://www.aprs-is.net/), [APRS protocol reference](https://www.aprs.org/) | Authenticated filtered stream via APRS-IS; global amateur network; live packets | Requires callsign/passcode or approved client configuration; follow APRS-IS rules, filters, rate limits, and third-party data policy. Stations may be mobile, stale, misconfigured, or intentionally coarse. | Documented protocol; access review |
+| Winlink gateways | [Winlink system](https://winlink.org/) | Gateway listings and service data vary; regional network | Verify data download/API, reuse rights, and freshness with Winlink. Avoid displaying private message content. | Research candidate |
+| Amateur and other satellites / passes | [CelesTrak GP/OMM docs](https://celestrak.org/NORAD/documentation/gp-data-formats.php), [CelesTrak usage policy](https://celestrak.org/usage-policy.php) | GP/OMM element sets; globally propagated locally with SGP4; element updates vary by object | Respect the current usage policy: it gives a two-hour update interval for GP data and asks clients to download only once per update. Cache element sets and calculate positions locally instead of polling per animation frame. TLE/OMM predictions degrade with element age; show epoch and stale threshold. Satellite catalog identity does not grant image or telemetry rights. | Documented; P1 |
+| Maidenhead grid and DXCC/ITU/CQ regions | Local Maidenhead geometry; [ARRL DXCC](https://www.arrl.org/dxcc), [ITU regions](https://www.itu.int/), CQ zone boundaries from a source requiring review | Compute grid cells locally; boundaries are static reference data | Grid precision corresponds to area, not a point. Check reuse terms/source for award and zone boundaries; boundaries can be approximate and do not imply award credit. | Grid documented/local; boundaries review |
+| Solar and geomagnetic conditions | [NOAA SWPC JSON products](https://services.swpc.noaa.gov/json/) and [SWPC product directory](https://www.swpc.noaa.gov/products) | Public JSON/text products; global indices and alerts; product-specific observed, forecast, and issue times | Public interfaces are documented, but schemas and cadence vary by product. Pin product schema, validate units, preserve product timestamp, and distinguish measured Kp from predicted values. | Documented; P1 |
+| Propagation/MUF | [ITU-R P.533](https://www.itu.int/rec/R-REC-P.533/en), [NOAA SWPC](https://www.swpc.noaa.gov/products) | Prediction/model calculations require path, frequency, time, and ionospheric inputs; point forecasts are not observed paths | P.533 is a recommendation/model, not a live global MUF feed. Confirm implementation/library licensing and validate against known tools. Label model and assumptions; do not imply a spot means a propagation forecast. | Model integration spike |
+| Ionosonde MUF/foF2 map | [prop.kc2g.com overview](https://prop.kc2g.com/about/), [station data](https://prop.kc2g.com/stations/), and [project source](https://github.com/arodland/prop) | Near-real-time MUF(3000 km), foF2, and ionosonde station data; the site says maps regenerate every 15 minutes from measurements usually 5–20 minutes old | Candidate for a map overlay and station markers. The provider describes the contours as spatial interpolation from sparse, unevenly distributed ionosonde measurements; confidence is lower far from stations. Verify a stable supported endpoint, schema, CORS, attribution, and reuse terms before integration. Distinguish measured station values from interpolated estimates and retain the displayed data time. | Candidate; integration and terms spike |
+| Local radio telemetry | User's radio/control/logging software integration | Station-local; device/API-specific | Explicit configuration and credentials required; secrets stay server-side. Do not initiate CAT/PTT/transmission from a display integration. | Custom, opt-in |
+
+### Radio display
+
+Use a consistent line-icon family: tower for station, tower with rings for repeater, small satellite silhouette for spacecraft, and compact report/antenna glyph for reception spots. Distinguish source classes by shape and line pattern as well as accent color. Spot links are thin arcs or great-circle paths with directional endpoints; fading and opacity encode age, while frequency/band and mode remain explicit in details. For dense reports, cluster by receiving/reported endpoint at world zoom; reveal individual reports as zoom increases. Filters include age, band/frequency, mode, source, callsign, and distance where available. Grid lines are zoom-adaptive and subdued; tap/click reports the locator and its precision. Do not draw arcs for reports without both valid coordinates.
+
+## Places, transport, ecology, and infrastructure
+
+| Layer/data | Provider and documentation | Access, coverage, timing | Terms and practical limits | Status |
+|---|---|---|---|---|
+| Cities, landmarks, roads, rail, trails, ports | [OpenStreetMap](https://www.openstreetmap.org/copyright), [Geofabrik extracts](https://download.geofabrik.de/), [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) | Regional extracts or query service; worldwide with varying completeness; edits are continuous | ODbL attribution/share-alike requirements. Overpass is not a production bulk extraction service; use extracts or a properly licensed provider and respect service policy. | Documented; provider decision |
+| Protected areas and parks | [Protected Planet / WDPA](https://www.protectedplanet.net/en/thematic-areas/wdpa), [US PAD-US](https://www.usgs.gov/programs/gap-analysis-project/science/pad-us-data-download) | Global or national downloads; periodic releases | WDPA use requires registration and has specific terms; some records are sensitive or restricted. US PAD-US has its own metadata/license. Verify before packaging or redistributing. | Needs access review |
+| Airports and aeronautical reference | [OurAirports data](https://ourairports.com/data/), [FAA data portal](https://www.faa.gov/air_traffic/flight_info/aeronav) | Downloadable airport/reference data; global or US; periodic | Check dataset license and accuracy. Not an operational navigation source; no runway/obstacle safety use. | Candidate; verify dataset terms |
+| Live aircraft | [OpenSky Network API](https://openskynetwork.github.io/opensky-api/), [OpenSky terms](https://opensky-network.org/about/terms-of-use) | API states and historical data; receiver coverage is geographically uneven; near-real-time | Anonymous/authenticated limits and use conditions apply and can change. Commercial/redistribution use may require permission. Aircraft may be filtered or absent; not a complete air-traffic picture. | Documented; account/terms check |
+| Ships and AIS | [Global Fishing Watch API](https://globalfishingwatch.org/our-apis/documentation), [MarineTraffic](https://www.marinetraffic.com/en/ais-api-services) | GFW analysis/API and commercial AIS APIs; coverage and latency vary | GFW access may require token/application and is analysis-oriented; commercial AIS generally licensed/paid. AIS is not complete, can be delayed/spoofed, and should not be used for navigation. | Needs access/contract review |
+| Weather/seismic stations and observatories | NWS API, [USGS seismic feeds](https://earthquake.usgs.gov/earthquakes/feed/v1.0/), [NOAA NCEI](https://www.ncei.noaa.gov/) | Station catalogs and observations; station networks are regional; report cadence varies | Show station ID and provider; null/missing readings remain missing. A station marker does not mean current data is available. | Documented source families |
+| Wildlife tracking | [Movebank](https://www.movebank.org/cms/movebank-content/data-access), [GBIF occurrence API](https://www.gbif.org/developer/summary) | Research datasets and occurrence records; global but project-specific | Movebank access and reuse are controlled by data owners; precise locations may be sensitive. GBIF records are often historical, not live tracks, and have dataset-specific licenses. | Needs permission/data review |
+| Population and human settlement | [WorldPop](https://www.worldpop.org/), [GHSL](https://human-settlement.emergency.copernicus.eu/) | Gridded estimates and settlement layers; global/national; vintage varies by product | Estimates, not live counts. Preserve release, year, units, and methodology; verify the license for chosen raster/vector products. | Documented candidates |
+| Environment, land cover, protected ecology | [Copernicus Data Space](https://dataspace.copernicus.eu/), [NASA Earthdata](https://www.earthdata.nasa.gov/), [GBIF](https://www.gbif.org/) | Satellite, model, and survey data; product-specific geographic/time coverage | Product licenses, account requirements, and services differ. Do not imply a composite is current or a species observation is a population estimate. | Research/product selection |
+| Ocean conditions | [NOAA CoastWatch](https://coastwatch.noaa.gov/), [Copernicus Marine](https://marine.copernicus.eu/access-data) | SST, currents, waves, sea level, and related grids; global/regional products; observed/model cycles vary | Some endpoints/accounts or service quotas may apply. Label observation vs forecast, depth, units, valid time, and grid resolution. | Documented candidates; spike |
+| Submarine cables and infrastructure | [TeleGeography Submarine Cable Map](https://www.submarinecablemap.com/), [OpenStreetMap infrastructure](https://wiki.openstreetmap.org/wiki/Map_features) | Published reference map or community features; update cadence varies | TeleGeography data reuse requires permission/licensing; map visibility is not a data license. OSM coverage/accuracy varies and sensitive infrastructure may be incomplete. | Needs terms/source review |
+| Custom GeoJSON, XYZ, WMS/WMTS | [OGC API standards](https://ogcapi.ogc.org/), [GeoJSON RFC 7946](https://www.rfc-editor.org/rfc/rfc7946), [Leaflet tile layers](https://leafletjs.com/reference.html#tilelayer) | User-configured URL or upload; source-defined coverage, projection, cadence | Validate schemes, host policy, size, geometry, attribution, CRS, and refresh interval. Credentials must be server-side. A URL does not grant reuse permission; avoid proxying arbitrary internal/private network targets. | P0 extensibility |
+| User drawings and annotations | Geo-managed GeoJSON; [RFC 7946](https://www.rfc-editor.org/rfc/rfc7946) | Local database; user-controlled timing/coverage | User-owned content; private by default; export and delete supported. Validate coordinates, size, and text. Preserve original coordinates and date-line-safe rendering. | P0 |
+
+## Normalized data contract and source operations
+
+Every adapter response should provide:
+
+```ts
+interface LayerEnvelope<T> {
+  sourceId: string;
+  attribution: string;
+  documentationUrl: string;
+  kind: "observation" | "forecast" | "model" | "composite" | "reference" | "user";
+  fetchedAt: string;       // UTC ISO-8601
+  dataTime?: string;       // observation/acquisition/issue time
+  validFrom?: string;      // forecast or validity interval
+  validTo?: string;
+  coverage?: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+  units?: Record<string, string>;
+  status: "current" | "stale" | "partial" | "unavailable";
+  staleReason?: string;
+  data: T;
+}
+```
+
+Normalize internally to UTC and WGS84 coordinates; preserve provider IDs, raw values, original units, and source links. Keep forecast valid time separate from observation time and fetch time. Use provider cache headers, bounded polling, request timeouts, cancellation, deduplication, and exponential backoff. Cache only where terms permit. Retain last valid data when refresh fails and display its age. Validate payload schema and coordinate ranges before rendering. Do not infer zero for absent values. Allow a source to report partial coverage or degraded service. Never make an external provider refresh at map animation frequency.
+
+Before calling an adapter production-ready, record its chosen endpoint/product/version, sample payload fixture, terms/attribution review date, CORS/auth constraints, expected cadence, stale threshold, and failure behavior. Integrations marked “needs access review” or “research candidate” remain opt-in or absent from default presets until resolved.
+
+## Map display specification
+
+The display follows [STYLE_GUIDE.md](STYLE_GUIDE.md): a full-screen atlas map with deep blue-green ocean, stable muted country colors, thin boundaries, clear coastlines, and a precise moving day/night boundary. The map remains the primary visual surface. Source detail belongs in layer legends, compact popups, and a selected-feature panel, not permanent map clutter.
+
+### Layer ordering and visual encodings
+
+1. **Base map**: exactly one selected style (political atlas, grayscale, relief, satellite, or night lights). Preserve center and zoom when switching.
+2. **Environmental rasters**: ocean/terrain/weather imagery and fields in dedicated panes. Keep opacity adjustable and labels/borders legible above them. Never stack two opaque imagery layers by default.
+3. **Computed light and grids**: day/night and twilight, graticule, Maidenhead. Night tint must follow geographic coordinates, wrap at the date line, and leave selected features visible.
+4. **Hazard and activity vectors**: alerts/regions, earthquake and fire points, lightning, stations, aircraft/ships, and radio reports, each with stable symbols and source-specific legends.
+5. **User geography and selection**: saved drawings, selected feature, hover target, and edit handles above data layers.
+6. **Widgets and controls**: independent UI layer above the map; they do not inherit raster opacity.
+
+Use the existing palette's cyan for water/ocean observations, blue for weather, violet for satellite/space, warm yellow for lightning/solar, orange/red for hazards, and green for parks/environment. Color is only one cue: pair it with distinct shapes, line styles, or labels. Use sequential ramps for ordered numeric values, diverging ramps around a meaningful midpoint, and categorical colors for classes. Include units and ramp endpoints in each legend. Do not use rainbow ramps for continuous measurements.
+
+| Feature family | Icon/symbol convention | Map behavior and filters |
+|---|---|---|
+| Station / amateur radio report | Simple antenna/tower; spot uses a report glyph and thin path | Cluster at low zoom; filters for source, age, band, mode, and callsign; path endpoints and direction in detail. |
+| Repeater | Tower with two small propagation arcs | Cluster with stations; details include frequency pair, offset, mode, tone, and data source where available. |
+| Satellite | Compact satellite silhouette; selected track as dashed line | Show current propagated position, ground track and optional footprint; detail includes catalog ID, element epoch, and propagation age. |
+| Lightning | Single bolt | Fade detections by age, cluster dense strikes, and show sensor/network coverage separately. |
+| Earthquake | Circle whose area encodes magnitude; optional depth ring/label | Filters for magnitude, age, and type; distinguish event point from intensity footprint. |
+| Aircraft | Small plane silhouette oriented by track if heading exists | Cluster at world scale; show provider time, callsign/ID when available, altitude/speed units, and coverage caveat. |
+| Ship | Small ship silhouette oriented by course if available | Cluster at low zoom; show AIS/provider time and vessel attributes only when supplied. |
+| Weather station | Thermometer or wind vane | Cluster; show station identifier, observation time, units, and missing fields explicitly. |
+| Park/protected area | Leaf or outlined polygon | Low-saturation green outline/fill; scale visibility with zoom; show dataset/date and protected-area designation. |
+| City/landmark | Small dot/star with optional label | Prioritized labels; density and label size scale with zoom/population class where known. |
+| User annotation | Pin, line, polygon, or route authored by user | Editable handles only in edit mode; user-chosen palette, title, notes, and layer visibility. |
+
+Use one consistent, locally bundled line-icon family with a minimum touch target around controls. Every icon-only button has an accessible name and tooltip. Map feature icons remain visually distinct at small sizes; avoid emoji and color-only distinctions. Marker size has a restrained range so high-volume layers do not dominate the geography.
+
+### Layer panel and feature detail
+
+Each layer row provides visibility, drag reorder, move-up/down controls, opacity where meaningful, status dot plus text, and a concise source/time subtitle. Expanding a layer shows legend, filters, refresh mode, source documentation, attribution, coverage caveat, and “last updated” age. Show source attribution persistently while the layer is visible. A stale state uses a clock icon/text and age, not merely a color shift; unavailable and partial coverage have explicit text.
+
+Point layers support bounding-box/time queries where possible, zoom-based clustering, and stable selection. Hover provides a short desktop summary; tap/click opens the same detail card on touch devices. Details include name/ID, location and coordinate precision, source, event or measurement time, fetched time/age, fields and units, and a link to the provider record. Keep selected details pinned until dismissed. Filters must identify units and their effect; changing a filter cancels or supersedes old requests so stale responses cannot replace newer results.
+
+### Temporal and motion controls
+
+Provide a shared UTC time display and per-layer time support. A layer that supports frames exposes play/pause, step, scrubber, selected time, and latest action. Show whether the cursor represents valid time, acquisition time, or a composite interval. The display clock may be simulated independently; sources that cannot replay historical state stay explicitly live. Pause nonessential animation in hidden tabs and honor reduced-motion settings. Lightning pulses and satellite movement may animate, but all essential location and status information remains readable without animation.
+
+## Living-globe presets
+
+Presets are starting layouts and may be edited/saved by the user. They enable only a small, coherent layer set; each preset lists its layers' time semantics and unavailable integrations.
+
+| Preset | Default composition |
+|---|---|
+| **Atlas Clock** (default) | Political atlas, day/night and civil twilight, UTC clock, one configurable local clock, subtle graticule. Clean offline-capable default. |
+| **Weather Desk** | Atlas or grayscale, latest satellite composite, selected radar where supported, wind/precipitation or temperature field, active official alerts; clear observed/forecast labels and time slider. |
+| **Space & Aurora** | Night atlas, twilight, aurora forecast, solar/geomagnetic widget, selected satellites and pass tracks; orbital epoch and model validity visible. |
+| **Radio Conditions** | Atlas, Maidenhead grid, user station, selected approved spot sources, optional ADIF contacts/paths, solar/geomagnetic indices; strict age/band/mode filters. |
+| **Earth in Motion** | Atlas, recent earthquakes, lightning where permitted, active fires, volcano notices, and official warning feeds; no unsupported “all hazards” claim. |
+| **Field & Ocean** | Relief or satellite base, approved ocean/weather grids, stations, parks, trails, and user drawings; sensible zoom ranges prevent point clutter. |
+
+At world scale, prefer a calm composition: show aggregate activity, broad raster patterns, and only high-priority labels. At regional scale, reveal individual points, station names, and detailed boundaries. Named presets must not imply a source is live or globally complete when it is not.
+
+## Initial integration order
+
+1. P0: Natural Earth political base, local solar geometry, IANA clocks, user pins/drawings, offline-safe data-health display, and declarative user GeoJSON/XYZ/WMS layer setup.
+2. P1: USGS GeoJSON, NOAA SWPC products, CelesTrak plus local propagation, NASA GIBS selected products, Maidenhead grid, and local ADIF import.
+3. P2 after provider and license review: NWS weather/alerts, radar and forecast grids, FIRMS, approved radio spot sources, aircraft/AIS, parks, population, environment, and infrastructure.
+
+Priorities are sequencing guidance, not proof of access or release approval. A small integration spike must verify current docs, actual payloads, visual fit, coverage, caching behavior, and terms before the source becomes a default layer.

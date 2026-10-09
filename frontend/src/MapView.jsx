@@ -1,0 +1,94 @@
+import {useEffect,useRef,forwardRef,useImperativeHandle} from 'react';
+import L from 'leaflet';
+import {attachCustomLayer} from './customLayers';
+import {nasaTileURL} from './imagery';
+import {reconcileResources} from './reconcile';
+import {liveLayer,glyphIcon} from './liveLayers';
+import {maidenheadLayer} from './maidenheadLayer';
+import {BASE_MAPS,baseMapController} from './baseMaps';
+import {WORLD_OFFSETS,worldCopies} from './worldCopies';
+import '@geoman-io/leaflet-geoman-free';
+import marker from 'leaflet/dist/images/marker-icon.png';
+import shadow from 'leaflet/dist/images/marker-shadow.png';
+import {sunPosition,RAD,locator,greatCircle} from './core';
+L.Icon.Default.mergeOptions({iconUrl:marker,iconRetinaUrl:marker,shadowUrl:shadow});
+const palette=['#95b18b','#c4b77e','#cd9b74','#9eacbf','#bc9291','#a5b88a','#c6bba0','#93b8b4','#b4a4be','#d0b37b'];
+const textNode = s => {const n=document.createElement('span');n.textContent=s;return n};
+function paintNight(tile,coords,time){const ctx=tile.getContext('2d');ctx.clearRect(0,0,256,256);const sun=sunPosition(time),sLat=sun.lat*RAD,size=256*Math.pow(2,coords.z);
+ for(let y=0;y<256;y+=4){const py=(coords.y*256+y+2)/size,lat=Math.atan(Math.sinh(Math.PI*(1-2*py)));for(let x=0;x<256;x+=4){const lng=((coords.x*256+x+2)/size*360-180)*RAD,alt=Math.asin(Math.sin(lat)*Math.sin(sLat)+Math.cos(lat)*Math.cos(sLat)*Math.cos(lng-sun.lng*RAD))/RAD;if(alt<0){ctx.fillStyle=alt>-6?`rgba(51,41,68,${.12+(-alt/6)*.22})`:alt>-18?`rgba(10,20,43,${.34+(-alt-6)/12*.28})`:'rgba(5,17,34,.66)';ctx.fillRect(x,y,4,4);}}}}
+const NightLayer=L.GridLayer.extend({createTile(coords){const tile=L.DomUtil.create('canvas');tile.width=tile.height=256;paintNight(tile,coords,this.options.time);return tile;},setTime(time){this.options.time=time;Object.values(this._tiles||{}).forEach(tile=>paintNight(tile.el,tile.coords,time));}});
+export default forwardRef(function MapView({state,feeds,time,locked,onMove,onInspect,onCoordinate,drawings,onDrawings,onReady,onError,onSourceStatus},ref){
+ const element=useRef(), map=useRef(),base=useRef(),names=useRef(),night=useRef(),overlays=useRef({}),drawingGroup=useRef(),drawingCopies=useRef(),callbacks=useRef({}),drawingSnapshot=useRef(),saveCurrentDrawings=useRef(),stationMarker=useRef([]),sunMarker=useRef([]),liveResources=useRef(new Map()),tileResources=useRef(new Map()),baseController=useRef();
+ callbacks.current={onMove,onInspect,onCoordinate,onDrawings,onSourceStatus,station:state.station};
+ useImperativeHandle(ref,()=>({
+  home(){map.current?.fitBounds([[-58,-176],[78,180]],{padding:window.innerWidth<600?[20,140]:[35,95]});},zoom(v){map.current?.setZoom(map.current.getZoom()+v);},
+  fly(lat,lng){map.current?.flyTo([lat,lng],Math.max(map.current.getZoom(),4));},
+  view(){return {center:[map.current.getCenter().lat,map.current.getCenter().lng],zoom:map.current.getZoom()};},
+  setView(v){if(v?.zoom)map.current?.setView(v.center,v.zoom);else map.current?.fitBounds([[-58,-176],[78,180]],{padding:window.innerWidth<600?[20,140]:[35,95]});},
+  draw(type){map.current.pm.disableGlobalEditMode();map.current.pm.disableGlobalRemovalMode();map.current.pm.enableDraw(type,{snappable:true,finishOn:'dblclick',pathOptions:{color:'#e3c878',fillColor:'#e3c878',fillOpacity:.15}});},
+  finish(){const shape=map.current.pm.Draw.getActiveShape();map.current.pm.Draw[shape]?._finishShape();},
+  cancel(){map.current.pm.disableDraw();map.current.pm.disableGlobalEditMode();map.current.pm.disableGlobalRemovalMode();},
+  edit(){map.current.pm.toggleGlobalEditMode();},remove(){map.current.pm.toggleGlobalRemovalMode();}
+ }),[]);
+ useEffect(()=>{
+ const m=L.map(element.current,{zoomControl:false,attributionControl:false,minZoom:.25,maxZoom:8,zoomSnap:.1,zoomDelta:.5,preferCanvas:true});map.current=m;
+ if(Number.isFinite(state.map?.zoom))m.setView(state.map.center,state.map.zoom,{animate:false});else m.fitBounds([[-58,-176],[78,180]],{padding:window.innerWidth<600?[20,140]:[35,95],animate:false});
+ m.createPane('base-raster').style.zIndex=220;m.createPane('countries').style.zIndex=250;m.createPane('night').style.zIndex=350;m.createPane('labels').style.zIndex=450;m.getPane('labels').style.pointerEvents='none';m.createPane('drawings').style.zIndex=680;m.createPane('locations').style.zIndex=650;
+ L.control.attribution({position:'bottomright',prefix:false}).addAttribution('<a href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noreferrer">Natural Earth 5.1.2</a> · <a href="https://leafletjs.com" target="_blank" rel="noreferrer">Leaflet</a>').addTo(m);
+ drawingGroup.current=L.featureGroup().addTo(m);drawingCopies.current=L.layerGroup().addTo(m);
+ m.on('moveend',()=>callbacks.current.onMove?.({center:[m.getCenter().lat,m.getCenter().lng],zoom:m.getZoom()}));
+ m.on('mousemove click',e=>callbacks.current.onCoordinate?.({...e.latlng,grid:locator(e.latlng.lat,e.latlng.lng)}));
+ const saveDrawings=()=>{const c=drawingGroup.current.toGeoJSON();drawingGroup.current.eachLayer(l=>{if(l instanceof L.Circle){const f=c.features.find(f=>f.properties?.id===l.feature?.properties?.id);if(f)f.properties.radius=l.getRadius();}});drawingSnapshot.current=JSON.stringify(c);callbacks.current.onDrawings?.(c);};
+ saveCurrentDrawings.current=saveDrawings;
+ m.on('pm:create',e=>{e.layer.feature={type:'Feature',properties:{id:crypto.randomUUID(),name:'My annotation',...(e.shape==='Circle'?{radius:e.layer.getRadius()}: {})}};drawingGroup.current.addLayer(e.layer);e.layer.on('pm:edit pm:dragend',saveDrawings);saveDrawings();});m.on('pm:remove',e=>{drawingGroup.current.removeLayer(e.layer);saveDrawings();});
+ const controller=new AbortController();fetch('/data/countries.geojson',{signal:controller.signal}).then(r=>{if(!r.ok)throw new Error('Atlas request failed');return r.json()}).then(data=>{
+  base.current=L.geoJSON(worldCopies(data),{pane:'countries',pmIgnore:true,style:f=>({fillColor:palette[(f.properties.MAPCOLOR13||1)%palette.length],fillOpacity:1,color:'#345569',weight:.65}),onEachFeature:(f,l)=>{l.on('click',()=>{if(m.pm.globalDrawModeEnabled()||m.pm.globalEditModeEnabled()||m.pm.globalRemovalModeEnabled())return;callbacks.current.onInspect?.({kind:'Geography',title:f.properties.ADMIN,fields:[['Region',f.properties.CONTINENT],['Population',Number(f.properties.POP_EST).toLocaleString()],['Dataset','Natural Earth · 5.1.2']],source:'Generalized political boundaries'});});}}).addTo(m);
+  names.current=L.layerGroup().addTo(m);data.features.filter(f=>(f.properties.LABELRANK||6)<5).forEach(f=>{const p=f.properties;if(Number.isFinite(p.LABEL_Y)&&Number.isFinite(p.LABEL_X))WORLD_OFFSETS.forEach(offset=>L.marker([p.LABEL_Y,p.LABEL_X+offset],{pane:'labels',interactive:false,pmIgnore:true,icon:L.divIcon({className:`country-label label-rank-${p.LABELRANK||6}`,html:textNode(p.NAME_EN||p.NAME).outerHTML,iconSize:[120,20],iconAnchor:[60,10]})}).addTo(names.current))});
+  [['ATLANTIC OCEAN',5,-35],['PACIFIC OCEAN',0,-145],['INDIAN OCEAN',-25,80]].forEach(([label,lat,lng])=>WORLD_OFFSETS.forEach(offset=>L.marker([lat,lng+offset],{pane:'labels',interactive:false,pmIgnore:true,icon:L.divIcon({className:'ocean-map-label',html:textNode(label).outerHTML,iconSize:[160,20],iconAnchor:[80,10]})}).addTo(names.current)));
+  const labelDensity=()=>{const z=m.getZoom();element.current.dataset.labelDensity=z<1.5?'sparse':z<2.5?'medium':'full';};m.on('zoomend',labelDensity);labelDensity();
+  onReady?.();
+ }).catch(e=>{if(e.name!=='AbortError'){console.error(e);onError?.(e)}});
+ return()=>{controller.abort();baseController.current?.dispose();for(const entry of [...liveResources.current.values(),...tileResources.current.values()])entry.dispose();liveResources.current.clear();tileResources.current.clear();m.remove();map.current=null;};
+ },[]);
+ useEffect(()=>{const m=map.current;if(!m||!base.current)return;
+ if(!baseController.current)baseController.current=baseMapController(m,definition=>L.tileLayer(definition.url,{pane:'base-raster',opacity:0,maxZoom:8,attribution:definition.attribution,pmIgnore:true}),id=>base.current.setStyle(f=>({fillColor:id==='grayscale'?'#8a9da3':palette[(f.properties.MAPCOLOR13||1)%palette.length],fillOpacity:['atlas','grayscale'].includes(id)?1:0,color:['atlas','grayscale'].includes(id)?'#345569':'#c5d5db',opacity:['atlas','grayscale'].includes(id)?1:.5})),status=>callbacks.current.onSourceStatus?.('base',status));
+ baseController.current.select(BASE_MAPS.find(b=>b.id===state.base)||BASE_MAPS[0]);
+ },[state.base,feeds.ready]);
+ useEffect(()=>{const m=map.current;if(!m)return;const config=state.layers.find(l=>l.id==='night');if(!config?.on){if(night.current)m.removeLayer(night.current);night.current=null;return;}if(!night.current)night.current=new NightLayer({pane:'night',time,opacity:config.opacity,updateWhenIdle:true}).addTo(m);else{night.current.setOpacity(config.opacity);const minute=Math.floor(time.getTime()/60000);if(Math.floor(night.current.options.time.getTime()/60000)!==minute)night.current.setTime(time);}},[Math.floor(time.getTime()/60000),state.layers]);
+ useEffect(()=>{const m=map.current;if(!m)return;
+ const definitions=state.layers.filter(l=>l.on&&!l.custom&&!['night','imagery'].includes(l.id)).map(l=>({...l,key:l.id}));
+ reconcileResources(liveResources.current,definitions,definition=>{
+  const pane=`data-${definition.id}`;if(!m.getPane(pane))m.createPane(pane);
+  if(definition.id==='maidenhead')return maidenheadLayer(m,pane);
+  if(definition.id==='graticule'){const group=L.layerGroup().addTo(m),grid=definition.id==='maidenhead';for(const offset of WORLD_OFFSETS){for(let lon=-180;lon<=180;lon+=grid?20:30)L.polyline([[-85,lon+offset],[85,lon+offset]],{pane,color:grid?'#baa8d2':'#bdd6d6',weight:.7,interactive:false,pmIgnore:true}).addTo(group);for(let lat=-80;lat<=80;lat+=grid?10:30)L.polyline([[lat,-180+offset],[lat,180+offset]],{pane,color:grid?'#baa8d2':'#bdd6d6',weight:.7,interactive:false,pmIgnore:true}).addTo(group);}return {update(){},dispose(){m.removeLayer(group)}};}
+  return liveLayer(L,m,definition.id,pane,detail=>callbacks.current.onInspect?.(detail));
+ },(entry,definition)=>{const pane=m.getPane(`data-${definition.id}`);pane.style.zIndex=620-state.layers.findIndex(l=>l.id===definition.id);pane.style.opacity=definition.opacity;entry.update(feeds[definition.id]?.data);});
+ },[feeds,state.layers]);
+ useEffect(()=>{const m=map.current;if(!m)return;
+ const definitions=state.layers.filter(l=>l.on&&(l.custom||l.id==='imagery')).map(l=>({...l,key:JSON.stringify(l.id==='imagery'?{date:l.date}:{kind:l.kind,url:l.url,wmsLayers:l.wmsLayers,data:l.data,attribution:l.attribution})}));
+ reconcileResources(tileResources.current,definitions,definition=>{const pane=definition.id==='imagery'?'imagery':`custom-${definition.id}`;if(!m.getPane(pane))m.createPane(pane);const source=definition.id==='imagery'?{kind:'xyz',url:nasaTileURL(definition.date),name:'MODIS Terra true color',attribution:'NASA EOSDIS GIBS · MODIS Terra corrected reflectance'}:definition;
+ return {dispose:attachCustomLayer(m,source,pane,status=>callbacks.current.onSourceStatus?.(definition.id,{...status,...(definition.id==='imagery'?{dataTime:`${definition.date}T00:00:00Z`,kind:'composite'}:{})}))};
+ },(entry,definition)=>{const pane=m.getPane(definition.id==='imagery'?'imagery':`custom-${definition.id}`);pane.style.zIndex=definition.id==='imagery'?300:620-state.layers.findIndex(l=>l.id===definition.id);pane.style.opacity=definition.opacity;});
+ },[state.layers]);
+ useEffect(()=>{
+  const m=map.current;if(!m||!drawings)return;
+  const snapshot=JSON.stringify(drawings);if(snapshot===drawingSnapshot.current)return;drawingSnapshot.current=snapshot;
+  drawingGroup.current.clearLayers();drawingCopies.current.clearLayers();
+  const style=f=>({color:f.properties?.color||'#e1c57a',weight:f.properties?.lineWidth||2,fillOpacity:f.properties?.fillOpacity??.13});
+  L.geoJSON(drawings,{pane:'drawings',style,pointToLayer:(f,ll)=>f.properties?.radius?L.circle(ll,{pane:'drawings',radius:f.properties.radius,color:f.properties?.color||'#e1c57a',weight:f.properties?.lineWidth||2,fillOpacity:f.properties?.fillOpacity??.13}):L.marker(ll),onEachFeature:(f,l)=>{l.bindTooltip(textNode(f.properties?.name||'My annotation'));l.on('pm:edit pm:dragend',()=>saveCurrentDrawings.current?.());}}).eachLayer(l=>drawingGroup.current.addLayer(l));
+  WORLD_OFFSETS.filter(offset=>offset!==0).forEach(offset=>{
+   const copy=L.geoJSON(worldCopies(drawings,[offset]),{pane:'drawings',style,interactive:false,pmIgnore:true,pointToLayer:(f,ll)=>L.circleMarker(ll,{pane:'drawings',radius:4,color:f.properties?.color||'#e1c57a',interactive:false,pmIgnore:true})});
+   copy.eachLayer(layer=>{layer.options.interactive=false;layer.options.pmIgnore=true;});drawingCopies.current.addLayer(copy);
+  });
+ },[drawings]);
+ useEffect(()=>{const m=map.current;if(!m)return;const station=state.station;
+ if(!stationMarker.current.length)stationMarker.current=WORLD_OFFSETS.map(offset=>{const marker=L.marker([station.lat,station.lng+offset],{pane:'locations',icon:glyphIcon(L,'station'),title:'Your station',pmIgnore:true}).addTo(m);marker.on('click',()=>{const station=callbacks.current.station;callbacks.current.onInspect?.({kind:'Your station',title:station.callsign||station.name,fields:[['Locator',locator(station.lat,station.lng)],['Latitude',`${station.lat.toFixed(3)}°`],['Longitude',`${station.lng.toFixed(3)}°`]],source:'Configured station location'});});return marker;});
+ stationMarker.current.forEach((marker,index)=>marker.setLatLng([station.lat,station.lng+WORLD_OFFSETS[index]]).bindTooltip(textNode(station.callsign||station.name)));
+ },[state.station]);
+ useEffect(()=>{const m=map.current;if(!m)return;if(!state.layers.find(l=>l.id==='night')?.on){sunMarker.current.forEach(marker=>m.removeLayer(marker));sunMarker.current=[];return;}const sun=sunPosition(time);
+ if(!sunMarker.current.length)sunMarker.current=WORLD_OFFSETS.map(offset=>L.marker([sun.lat,sun.lng+offset],{pane:'locations',icon:glyphIcon(L,'sun'),title:'Subsolar point',pmIgnore:true}).addTo(m).bindTooltip(textNode('Subsolar point · Sun directly overhead')));
+ else sunMarker.current.forEach((marker,index)=>marker.setLatLng([sun.lat,sun.lng+WORLD_OFFSETS[index]]));
+ },[time.getUTCMinutes(),time.getUTCHours(),state.layers]);
+ useEffect(()=>{if(locked){map.current?.pm.disableDraw();map.current?.pm.disableGlobalEditMode();map.current?.pm.disableGlobalRemovalMode();}},[locked]);
+ return <div className="map-canvas" ref={element} aria-label="Interactive world atlas"/>;
+});

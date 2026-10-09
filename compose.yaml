@@ -1,0 +1,36 @@
+services:
+  geo-web:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${GEO_WEB_BIND:-127.0.0.1}:${GEO_WEB_PORT:-8082}:80"
+    depends_on:
+      geo-api:
+        condition: service_healthy
+
+  geo-api:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      GEO_DATABASE_PATH: /data/geo.sqlite3
+      GEO_FORWARDED_ALLOW_IPS: ${GEO_FORWARDED_ALLOW_IPS:-127.0.0.1,::1}
+      GEO_SATELLITE_CATALOG_IDS: ${GEO_SATELLITE_CATALOG_IDS:-25544}
+      GEO_CORS_ORIGINS: ${GEO_CORS_ORIGINS:-http://localhost:5173,https://geo.ag7su.com}
+      GEO_CACHE_TTL_SECONDS: ${GEO_CACHE_TTL_SECONDS:-60}
+      GEO_REQUEST_TIMEOUT_SECONDS: ${GEO_REQUEST_TIMEOUT_SECONDS:-12}
+      GEO_USER_AGENT: ${GEO_USER_AGENT:-GeoDashboard/0.1 (self-hosted geographic display)}
+      GEO_EDIT_TOKEN: ${GEO_EDIT_TOKEN:-}
+    ports:
+      - "${GEO_API_BIND:-127.0.0.1}:${GEO_API_PORT:-8081}:8080"
+    volumes:
+      - geo-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  geo-data:
