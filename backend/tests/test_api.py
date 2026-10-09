@@ -49,6 +49,30 @@ def test_radio_path_adapters_use_reported_and_estimated_locations(tmp_path: Path
     assert len(calls) == 3
 
 
+def test_pota_spots_return_park_points_and_station_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(db, "settings", replace(db.settings, database_path=tmp_path / "pota-test.sqlite3"))
+    db.initialize()
+
+    def response(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "api.pota.app"
+        return httpx.Response(200, json=[
+            {"spotId": 42, "activator": "K1ABC", "frequency": "14.0625", "mode": "CW", "reference": "US-1234", "name": "Test Park", "locationDesc": "US-OR", "spotTime": "2026-10-09T20:00:00", "latitude": 45.5, "longitude": -122.5, "grid6": "CN85"},
+            {"spotId": 43, "activator": "K2ABC", "reference": "US-0000", "invalid": True, "latitude": 0, "longitude": 0},
+        ])
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as http:
+            return await sources.pota_spots(http, 45.64, -122.66)
+
+    result = asyncio.run(run())
+    features = result["data"]["features"]
+    assert [feature["geometry"]["type"] for feature in features] == ["Point", "LineString"]
+    assert features[0]["geometry"]["coordinates"] == [-122.5, 45.5]
+    assert features[1]["geometry"]["coordinates"] == [[-122.66, 45.64], [-122.5, 45.5]]
+    assert features[0]["properties"]["park"] == "Test Park"
+    assert features[1]["properties"]["precision"] == "POTA park coordinate"
+
+
 def test_nhc_storm_track_extracts_forecast_line_and_current_center(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(db, "settings", replace(db.settings, database_path=tmp_path / "storm-test.sqlite3"))
     db.initialize()
@@ -308,6 +332,8 @@ async def test_eonet_active_events_keep_point_and_perimeter_features_and_cache(t
 def test_eonet_endpoint_rejects_unknown_layer_and_lists_new_layers(client: TestClient):
     catalog = client.get("/api/v1/layers").json()["layers"]
     assert {"wildfires", "volcanoes", "floods", "severe-storms"}.issubset({layer["id"] for layer in catalog})
+    alert = next(layer for layer in catalog if layer["id"] == "weather-alerts")
+    assert alert["endpoint"] == "/api/v1/weather-alerts"
     clouds = next(layer for layer in catalog if layer["id"] == "clouds")
     assert "GOES ABI and Himawari AHI clean infrared" in clouds["source"]
     composite = next(layer for layer in catalog if layer["id"] == "eumetsat-clouds")
@@ -318,6 +344,35 @@ def test_eonet_endpoint_rejects_unknown_layer_and_lists_new_layers(client: TestC
     assert response.json()["detail"]["code"] == "unknown_event_category"
 
 
+@pytest.mark.asyncio
+async def test_nws_active_alerts_require_geojson_and_preserve_polygon_properties(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(db, "settings", replace(db.settings, database_path=tmp_path / "nws-test.sqlite3"))
+    db.initialize()
+    payload = {"type": "FeatureCollection", "features": [{"type": "Feature", "id": "urn:alert:1",
+        "properties": {"event": "Tornado Warning", "severity": "Extreme", "certainty": "Observed", "sent": "2026-10-09T16:00:00Z", "expires": "2026-10-09T17:00:00Z"},
+        "geometry": {"type": "Polygon", "coordinates": [[[-97, 36], [-96, 36], [-96, 35], [-97, 36]]]}}]}
+    requests: list[httpx.Request] = []
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=payload)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await sources.nws_active_alerts(client)
+    assert requests[0].url.host == "api.weather.gov"
+    assert requests[0].headers["accept"] == "application/geo+json"
+    assert requests[0].headers.get("user-agent")
+    assert result["kind"] == "observation"
+    assert result["dataTime"] == "2026-10-09T16:00:00Z"
+    assert result["data"]["features"][0]["properties"]["severity"] == "Extreme"
+    assert result["data"]["features"][0]["geometry"]["type"] == "Polygon"
+
+
+def test_weather_alert_endpoint_wraps_feed(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    async def fake_alerts(_client: httpx.AsyncClient):
+        return {"source": "nws-active-alerts", "data": {"type": "FeatureCollection", "features": []}}
+    monkeypatch.setattr(sources, "nws_active_alerts", fake_alerts)
+    response = client.get("/api/v1/weather-alerts")
+    assert response.status_code == 200
+    assert response.json()["source"] == "nws-active-alerts"
 @pytest.mark.asyncio
 async def test_space_weather_parses_noaa_kp_field(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(db, "settings", replace(db.settings, database_path=tmp_path / "kp-test.sqlite3"))

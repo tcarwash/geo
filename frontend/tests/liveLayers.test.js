@@ -4,7 +4,7 @@ import {liveLayer} from '../src/liveLayers.js';
 import {WORLD_OFFSETS} from '../src/worldCopies.js';
 test('ISS feed refresh moves the same SVG marker and updates its existing track',()=>{
  const created=[];
- class Layer{constructor(kind,position,options={}){this.kind=kind;this.position=position;this.options=options;this.children=new Set();this.events={};created.push(this)}addTo(parent){parent.addLayer(this);return this}addLayer(l){this.children.add(l);return this}removeLayer(l){this.children.delete(l);return this}clearLayers(){this.children.clear();return this}on(type,fn){this.events[type]=fn;return this}setLatLng(ll){this.position=ll;return this}getLatLng(){return this.position}setLatLngs(coords){this.coords=coords;return this}setStyle(){return this}setRadius(){return this}}
+ class Layer{constructor(kind,position,options={}){this.kind=kind;this.position=position;this.options=options;this.children=new Set();this.events={};this.tooltip=null;created.push(this)}addTo(parent){parent.addLayer(this);return this}addLayer(l){this.children.add(l);return this}removeLayer(l){this.children.delete(l);return this}clearLayers(){this.children.clear();return this}on(type,fn){this.events[type]=fn;return this}setLatLng(ll){this.position=ll;return this}getLatLng(){return this.position}setLatLngs(coords){this.coords=coords;return this}setStyle(){return this}setRadius(){return this}getTooltip(){return this.tooltip}bindTooltip(content,options){this.tooltip={content,options};return this}setTooltipContent(content){this.tooltip.content=content;return this}unbindTooltip(){this.tooltip=null;return this}}
  const L={layerGroup:()=>new Layer('group'),marker:(ll,o)=>new Layer('marker',ll,o),polyline:(c,o)=>new Layer('line',null,o),divIcon:o=>o,GeoJSON:{coordsToLatLng:c=>({lat:c[1],lng:c[0]}),coordsToLatLngs:(c,depth)=>depth?c.map(a=>a.map(p=>({lat:p[1],lng:p[0]}))):c.map(p=>({lat:p[1],lng:p[0]}))}};
  const originalWindow=globalThis.window;globalThis.window={matchMedia:()=>({matches:true})};
  try{
@@ -28,4 +28,7 @@ test('active event polygons redraw in place and repeat across wrapped worlds',()
  assert.equal(polygons.length,WORLD_OFFSETS.length);assert.equal(created.filter(layer=>layer.kind==='polygon').length,WORLD_OFFSETS.length);
  assert.equal(polygons[0].coords[0][0].lng,-124+WORLD_OFFSETS[0]);assert.equal(polygons[0].style.fillColor,'#ff8b61');
  polygons[0].events.click();assert.equal(detail.title,'River Fire');assert.equal(detail.kind,'Wildfire');resource.dispose();
+ const alerts=liveLayer(L,map,'weather-alerts','pane',value=>detail=value);
+ alerts.update({type:'FeatureCollection',features:[{type:'Feature',id:'alert-1',properties:{event:'Tornado Warning',headline:'Tornado Warning for Test County',severity:'Extreme',urgency:'Immediate',certainty:'Observed',expires:'2026-10-09T17:00:00Z',web:'https://api.weather.gov/alerts/alert-1'},geometry:{type:'Polygon',coordinates:[[[1,2],[2,2],[2,1],[1,2]]]}}]});
+ const alert=created.filter(layer=>layer.kind==='polygon').at(-1);assert.equal(alert.style.fillColor,'#e45555');alert.events.click();assert.equal(detail.title,'Tornado Warning for Test County');assert.equal(detail.fields[0][1],'Extreme');assert.equal(detail.fields.at(-1)[1].href,'https://api.weather.gov/alerts/alert-1');assert.equal(detail.source,'National Weather Service API');alerts.dispose();
 });

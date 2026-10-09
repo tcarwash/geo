@@ -25,6 +25,7 @@ SWPC_AURORA = "https://services.swpc.noaa.gov/json/ovation_aurora_latest.json"
 SWPC_KP = "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json"
 CELESTRAK_TLE = "https://celestrak.org/NORAD/elements/gp.php"
 EONET_EVENTS = "https://eonet.gsfc.nasa.gov/api/v3/events/geojson"
+NWS_ACTIVE_ALERTS = "https://api.weather.gov/alerts/active"
 EONET_CATEGORIES = {
     "wildfires": "wildfires",
     "volcanoes": "volcanoes",
@@ -36,6 +37,7 @@ NHC_STORMS = "https://www.nhc.noaa.gov/CurrentStorms.json"
 WAM_IPE_INDEX = "https://services.swpc.noaa.gov/images/animations/wam-ipe/wfs_ionosphere_new/"
 RBN_SPOTS = "https://vailrerbn.com/api/v1/spots"
 DXCLUSTER_SPOTS = "https://dxc.jo30.de/dxcache/spots"
+POTA_SPOTS = "https://api.pota.app/spot/activator"
 GOES_CATALOG_IDS = {"GOES-East": 60133, "GOES-West": 51850}
 
 
@@ -139,6 +141,39 @@ async def natural_events(client: httpx.AsyncClient, category: str) -> dict[str, 
         )
 
     return await cache.get_or_fetch(f"nasa:eonet:{category}", fetch)
+
+
+async def nws_active_alerts(client: httpx.AsyncClient) -> dict[str, Any]:
+    async def fetch() -> dict[str, Any]:
+        response = await client.get(
+            NWS_ACTIVE_ALERTS,
+            params={"status": "actual"},
+            headers={"Accept": "application/geo+json", "User-Agent": "GeoLivingAtlas/1.0"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict) or payload.get("type") != "FeatureCollection":
+            raise TypeError("NWS response is not a GeoJSON FeatureCollection")
+        features = payload.get("features")
+        if not isinstance(features, list):
+            raise TypeError("NWS active-alert features are missing")
+        sent_times = [
+            normalized
+            for feature in features
+            if isinstance(feature, dict) and isinstance(feature.get("properties"), dict)
+            if (normalized := _parse_iso(feature["properties"].get("sent")))
+        ]
+        return cache.envelope(
+            source="nws-active-alerts",
+            kind="observation",
+            data=payload,
+            attribution="National Weather Service · active alerts",
+            documentation_url="https://www.weather.gov/documentation/services-web-api",
+            data_time=max(sent_times) if sent_times else None,
+            ttl_seconds=120,
+        )
+
+    return await cache.get_or_fetch("nws:active-alerts", fetch)
 
 
 async def muf_forecast(client: httpx.AsyncClient) -> dict[str, Any]:
@@ -284,6 +319,36 @@ async def dx_cluster_spots(client: httpx.AsyncClient) -> dict[str, Any]:
         return cache.envelope(source="dx-cluster", kind="observation", data={"type": "FeatureCollection", "features": features}, attribution="DX Cluster · via jo30.de DXClusterAPI", documentation_url="https://jo30.de/dxcluster-per-rest-json/", data_time=_now_iso(), ttl_seconds=60)
 
     return await cache.get_or_fetch("radio:dxcluster:latest", fetch)
+
+
+async def pota_spots(client: httpx.AsyncClient, latitude: float, longitude: float) -> dict[str, Any]:
+    async def fetch() -> dict[str, Any]:
+        response = await client.get(POTA_SPOTS)
+        response.raise_for_status()
+        rows = response.json()
+        if not isinstance(rows, list):
+            raise TypeError("POTA response is not a spot list")
+        features = []
+        for row in rows[:1000]:
+            if not isinstance(row, dict) or row.get("invalid"):
+                continue
+            try:
+                park_lat = float(row["latitude"])
+                park_lng = float(row["longitude"])
+            except (KeyError, TypeError, ValueError):
+                position = adif.parse_locator(row.get("grid6") or row.get("grid4"))
+                if not position:
+                    continue
+                park_lng, park_lat = position
+            if not all(math.isfinite(v) for v in (park_lat, park_lng)) or not (-90 <= park_lat <= 90 and -180 <= park_lng <= 180):
+                continue
+            spot_id = row.get("spotId") or f"{row.get('activator')}:{row.get('reference')}:{row.get('spotTime')}"
+            common = {"activator": row.get("activator"), "reference": row.get("reference"), "park": row.get("name") or row.get("parkName"), "region": row.get("locationDesc"), "frequencyMHz": row.get("frequency"), "mode": row.get("mode"), "spotter": row.get("spotter"), "comments": row.get("comments"), "source": row.get("source"), "observedAt": row.get("spotTime"), "grid": row.get("grid6") or row.get("grid4"), "precision": "POTA park coordinate" if row.get("latitude") is not None else "Maidenhead grid estimate"}
+            features.append({"type": "Feature", "id": f"pota:{spot_id}:park", "geometry": {"type": "Point", "coordinates": [park_lng, park_lat]}, "properties": common})
+            features.append({"type": "Feature", "id": f"pota:{spot_id}:path", "geometry": {"type": "LineString", "coordinates": [[longitude, latitude], [park_lng, park_lat]]}, "properties": common})
+        return cache.envelope(source="pota", kind="observation", data={"type": "FeatureCollection", "features": features}, attribution="Parks on the Air · active activator spots", documentation_url="https://docs.pota.app/", data_time=_now_iso(), ttl_seconds=60)
+
+    return await cache.get_or_fetch(f"radio:pota:spots:{latitude:.4f}:{longitude:.4f}", fetch)
 
 
 async def storm_tracks(client: httpx.AsyncClient) -> dict[str, Any]:

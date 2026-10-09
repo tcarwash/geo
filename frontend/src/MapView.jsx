@@ -8,6 +8,8 @@ import {maidenheadLayer} from './maidenheadLayer';
 import {mufLayer} from './mufLayer';
 import {propMufLayer} from './propMufLayer';
 import {hfAbsorptionLayer} from './hfAbsorptionLayer';
+import cqZones from './data/cqzones.json';
+import ituZones from './data/ituzones.json';
 import {BASE_MAPS,baseMapController} from './baseMaps';
 import {WORLD_OFFSETS,worldCopies} from './worldCopies';
 import '@geoman-io/leaflet-geoman-free';
@@ -17,12 +19,18 @@ import {sunPosition,RAD,locator,greatCircle} from './core';
 L.Icon.Default.mergeOptions({iconUrl:marker,iconRetinaUrl:marker,shadowUrl:shadow});
 const palette=['#95b18b','#c4b77e','#cd9b74','#9eacbf','#bc9291','#a5b88a','#c6bba0','#93b8b4','#b4a4be','#d0b37b'];
 const textNode = s => {const n=document.createElement('span');n.textContent=s;return n};
+const zoneFeatures=(source,type)=>({type:'FeatureCollection',features:source.features.flatMap((feature,index)=>{
+ const number=feature.properties?.[type+'_zone_number'],name=feature.properties?.[type+'_zone_name'],loc=feature.properties?.[type+'_zone_name_loc'];
+ const polygon={...feature,id:`${type}-${number}-${index}`,properties:{...feature.properties,zoneNumber:number,zoneName:name}};
+ return Array.isArray(loc)&&loc.length===2?[polygon,{type:'Feature',id:`${type}-label-${number}-${index}`,geometry:{type:'Point',coordinates:[loc[1],loc[0]]},properties:{zoneNumber:number,zoneName:name,label:`${type==='cq'?'CQ':'ITU'} ${number}`,zoneLabel:true}}]:[polygon];
+})});
+const RADIO_ZONE_DATA={'cq-zones':zoneFeatures(cqZones,'cq'),'itu-zones':zoneFeatures(ituZones,'itu')};
 function paintNight(tile,coords,time){const ctx=tile.getContext('2d');ctx.clearRect(0,0,256,256);const sun=sunPosition(time),sLat=sun.lat*RAD,size=256*Math.pow(2,coords.z);
  for(let y=0;y<256;y+=4){const py=(coords.y*256+y+2)/size,lat=Math.atan(Math.sinh(Math.PI*(1-2*py)));for(let x=0;x<256;x+=4){const lng=((coords.x*256+x+2)/size*360-180)*RAD,alt=Math.asin(Math.sin(lat)*Math.sin(sLat)+Math.cos(lat)*Math.cos(sLat)*Math.cos(lng-sun.lng*RAD))/RAD;if(alt<0){ctx.fillStyle=alt>-6?`rgba(51,41,68,${.18+(-alt/6)*.3})`:alt>-18?`rgba(10,20,43,${.48+(-alt-6)/12*.3})`:'rgba(5,17,34,.84)';ctx.fillRect(x,y,4,4);}}}}
 const NightLayer=L.GridLayer.extend({createTile(coords){const tile=L.DomUtil.create('canvas');tile.width=tile.height=256;paintNight(tile,coords,this.options.time);return tile;},setTime(time){this.options.time=time;Object.values(this._tiles||{}).forEach(tile=>paintNight(tile.el,tile.coords,time));}});
-export default forwardRef(function MapView({state,feeds,time,locked,onMove,onInspect,onCoordinate,drawings,onDrawings,onReady,onError,onSourceStatus},ref){
+export default forwardRef(function MapView({state,feeds,time,locked,onMove,onInspect,onCoordinate,onCountries,drawings,onDrawings,onReady,onError,onSourceStatus},ref){
  const element=useRef(), map=useRef(),base=useRef(),names=useRef(),night=useRef(),overlays=useRef({}),drawingGroup=useRef(),drawingCopies=useRef(),callbacks=useRef({}),drawingSnapshot=useRef(),saveCurrentDrawings=useRef(),stationMarker=useRef([]),sunMarker=useRef([]),liveResources=useRef(new Map()),tileResources=useRef(new Map()),baseController=useRef();
- callbacks.current={onMove,onInspect,onCoordinate,onDrawings,onSourceStatus,station:state.station};
+ callbacks.current={onMove,onInspect,onCoordinate,onCountries,onDrawings,onSourceStatus,station:state.station};
  useImperativeHandle(ref,()=>({
   home(){map.current?.fitBounds([[-58,-176],[78,180]],{padding:window.innerWidth<600?[20,140]:[35,95]});},zoom(v){map.current?.setZoom(map.current.getZoom()+v);},
   fly(lat,lng){map.current?.flyTo([lat,lng],Math.max(map.current.getZoom(),4));},
@@ -45,6 +53,7 @@ export default forwardRef(function MapView({state,feeds,time,locked,onMove,onIns
  saveCurrentDrawings.current=saveDrawings;
  m.on('pm:create',e=>{e.layer.feature={type:'Feature',properties:{id:crypto.randomUUID(),name:'My annotation',...(e.shape==='Circle'?{radius:e.layer.getRadius()}: {})}};drawingGroup.current.addLayer(e.layer);e.layer.on('pm:edit pm:dragend',saveDrawings);saveDrawings();});m.on('pm:remove',e=>{drawingGroup.current.removeLayer(e.layer);saveDrawings();});
  const controller=new AbortController();fetch('/data/countries.geojson',{signal:controller.signal}).then(r=>{if(!r.ok)throw new Error('Atlas request failed');return r.json()}).then(data=>{
+  callbacks.current.onCountries?.(data.features.map(f=>({name:f.properties.ADMIN,aliases:[f.properties.NAME_EN,f.properties.NAME],lat:f.properties.LABEL_Y,lng:f.properties.LABEL_X})).filter(c=>c.name&&Number.isFinite(c.lat)&&Number.isFinite(c.lng)));
   base.current=L.geoJSON(worldCopies(data),{pane:'countries',pmIgnore:true,style:f=>({fillColor:palette[(f.properties.MAPCOLOR13||1)%palette.length],fillOpacity:1,color:'#345569',weight:.65}),onEachFeature:(f,l)=>{l.on('click',()=>{if(m.pm.globalDrawModeEnabled()||m.pm.globalEditModeEnabled()||m.pm.globalRemovalModeEnabled())return;callbacks.current.onInspect?.({kind:'Geography',title:f.properties.ADMIN,fields:[['Region',f.properties.CONTINENT],['Population',Number(f.properties.POP_EST).toLocaleString()],['Dataset','Natural Earth · 5.1.2']],source:'Generalized political boundaries'});});}}).addTo(m);
   names.current=L.layerGroup().addTo(m);data.features.filter(f=>(f.properties.LABELRANK||6)<5).forEach(f=>{const p=f.properties;if(Number.isFinite(p.LABEL_Y)&&Number.isFinite(p.LABEL_X))WORLD_OFFSETS.forEach(offset=>L.marker([p.LABEL_Y,p.LABEL_X+offset],{pane:'labels',interactive:false,pmIgnore:true,icon:L.divIcon({className:`country-label label-rank-${p.LABELRANK||6}`,html:textNode(p.NAME_EN||p.NAME).outerHTML,iconSize:[120,20],iconAnchor:[60,10]})}).addTo(names.current))});
   [['ATLANTIC OCEAN',5,-35],['PACIFIC OCEAN',0,-145],['INDIAN OCEAN',-25,80]].forEach(([label,lat,lng])=>WORLD_OFFSETS.forEach(offset=>L.marker([lat,lng+offset],{pane:'labels',interactive:false,pmIgnore:true,icon:L.divIcon({className:'ocean-map-label',html:textNode(label).outerHTML,iconSize:[160,20],iconAnchor:[80,10]})}).addTo(names.current)));
@@ -59,7 +68,7 @@ export default forwardRef(function MapView({state,feeds,time,locked,onMove,onIns
  },[state.base,feeds.ready]);
  useEffect(()=>{const m=map.current;if(!m)return;const config=state.layers.find(l=>l.id==='night');if(!config?.on){if(night.current)m.removeLayer(night.current);night.current=null;return;}if(!night.current)night.current=new NightLayer({pane:'night',time,opacity:config.opacity,updateWhenIdle:true}).addTo(m);else{night.current.setOpacity(config.opacity);const minute=Math.floor(time.getTime()/60000);if(Math.floor(night.current.options.time.getTime()/60000)!==minute)night.current.setTime(time);}},[Math.floor(time.getTime()/60000),state.layers]);
  useEffect(()=>{const m=map.current;if(!m)return;
- const definitions=state.layers.filter(l=>l.on&&!l.custom&&!['night','imagery'].includes(l.id)).map(l=>({...l,key:l.id}));
+ const definitions=state.layers.filter(l=>l.on&&!l.custom&&!['night','imagery'].includes(l.id)).map(l=>({...l,...(RADIO_ZONE_DATA[l.id]?{data:RADIO_ZONE_DATA[l.id]}:{}),key:l.id}));
  reconcileResources(liveResources.current,definitions,definition=>{
   const pane=`data-${definition.id}`;if(!m.getPane(pane))m.createPane(pane);
   if(definition.id==='maidenhead')return maidenheadLayer(m,pane);
@@ -68,7 +77,7 @@ export default forwardRef(function MapView({state,feeds,time,locked,onMove,onIns
   if(definition.id==='hf-absorption')return {dispose:hfAbsorptionLayer(L,m,pane,status=>callbacks.current.onSourceStatus?.('hf-absorption',status)),update(){}};
   if(definition.id==='graticule'){const group=L.layerGroup().addTo(m),grid=definition.id==='maidenhead';for(const offset of WORLD_OFFSETS){for(let lon=-180;lon<=180;lon+=grid?20:30)L.polyline([[-85,lon+offset],[85,lon+offset]],{pane,color:grid?'#baa8d2':'#bdd6d6',weight:.7,interactive:false,pmIgnore:true}).addTo(group);for(let lat=-80;lat<=80;lat+=grid?10:30)L.polyline([[lat,-180+offset],[lat,180+offset]],{pane,color:grid?'#baa8d2':'#bdd6d6',weight:.7,interactive:false,pmIgnore:true}).addTo(group);}return {update(){},dispose(){m.removeLayer(group)}};}
   return liveLayer(L,m,definition.id,pane,detail=>callbacks.current.onInspect?.(detail));
- },(entry,definition)=>{const pane=m.getPane(`data-${definition.id}`);pane.style.zIndex=definition.id==='muf'?390:620-state.layers.findIndex(l=>l.id===definition.id);pane.style.opacity=definition.opacity;entry.update(feeds[definition.id]?.data);});
+ },(entry,definition)=>{const pane=m.getPane(`data-${definition.id}`);pane.style.zIndex=definition.id==='muf'?390:620-state.layers.findIndex(l=>l.id===definition.id);pane.style.opacity=definition.opacity;entry.update(feeds[definition.id]?.data||definition.data,definition.showLabels);});
  },[feeds,state.layers]);
  useEffect(()=>{const m=map.current;if(!m)return;
  const definitions=state.layers.filter(l=>l.on&&(l.custom||['imagery','satellite-weather','clouds','eumetsat-clouds','lightning','precipitation'].includes(l.id))).map(l=>({...l,key:JSON.stringify(l.id==='imagery'?{date:l.date}:l.custom?{kind:l.kind,url:l.url,wmsLayers:l.wmsLayers,data:l.data,attribution:l.attribution}:{id:l.id})}));

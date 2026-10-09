@@ -1,0 +1,67 @@
+import {chromium} from '@playwright/test';
+import assert from 'node:assert/strict';
+
+const browser=await chromium.launch();
+try {
+  for(const touch of [false,true]) {
+    const page=await browser.newPage({viewport:touch?{width:390,height:844}:{width:1440,height:900},hasTouch:touch,reducedMotion:'reduce'});
+    await page.goto(process.env.GEO_UI_URL||'http://127.0.0.1:4174');
+    const trigger=page.getByRole('button',{name:'Layers',exact:true});
+    await trigger.click();
+    const panel=page.locator('#display-panel');
+    const search=panel.locator('.search input');
+    await search.waitFor();
+    await panel.getByText('Computed',{exact:true}).waitFor();
+    if(touch) assert.equal(await search.evaluate(el=>document.activeElement===el),false,'Touch panel must not summon keyboard');
+    else assert.equal(await search.evaluate(el=>document.activeElement===el),true,'Desktop search receives focus');
+    assert.equal(await panel.locator('.base-map-section').getAttribute('open'),null,'Base map starts collapsed');
+    await panel.locator('.view-presets').locator('summary').click();
+    await panel.getByRole('button',{name:/^Weather/}).click();
+    await panel.getByRole('region',{name:'Preview Weather view'}).waitFor();
+    if(!touch) await page.screenshot({path:`${process.env.TMPDIR||'.'}/geo-view-preview.png`});
+    await panel.getByRole('button',{name:/Apply Weather view/}).click();
+    await panel.getByRole('button',{name:'Undo view change'}).waitFor();
+    await panel.getByRole('button',{name:'Undo view change'}).click();
+    await panel.getByRole('region',{name:'Preview Weather view'}).waitFor({state:'detached'});
+    await search.fill('Active weather alerts');
+    const alerts=panel.getByRole('switch',{name:'Active weather alerts'});
+    await alerts.waitFor();assert.equal(await alerts.isChecked(),false,'Weather alerts are opt-in');
+    await alerts.click();assert.equal(await alerts.isChecked(),true,'Weather alerts can be enabled from search');
+    await alerts.click();await search.fill('');
+    await search.fill('Geographic grid');
+    await panel.getByRole('button',{name:'Add Geographic grid to favorites'}).click();
+    await page.reload();
+    await page.getByRole('button',{name:'Layers',exact:true}).click();
+    const reopened=page.locator('#display-panel');
+    await reopened.getByRole('button',{name:/^Favorites/}).click();
+    assert.equal(await reopened.getByRole('switch',{name:'Geographic grid'}).count(),1,'Favorite persists across reload');
+    await reopened.getByRole('button',{name:'Remove Geographic grid from favorites'}).click();
+    await reopened.getByRole('button',{name:/^All layers/}).click();
+    await reopened.locator('.search input').fill('');
+    await reopened.locator('.layer-browser-tools').waitFor();
+    const panelAgain=reopened;
+    const searchAgain=panelAgain.locator('.search input');
+    await searchAgain.fill('zzzz-no-such-layer');
+    await panelAgain.locator('.layer-empty').waitFor();
+    assert.equal(await panelAgain.getByRole('switch').count(),0);
+    await panelAgain.locator('.layer-empty button').click();
+    assert.equal(await searchAgain.inputValue(),'');
+    assert(await panelAgain.getByRole('switch').count()>0);
+    await panelAgain.getByRole('button',{name:/^Active/}).click();
+    assert.equal(await panelAgain.getByRole('switch',{checked:false}).count(),0);
+    await panelAgain.getByRole('button',{name:/^All layers/}).click();
+    await searchAgain.fill('Geographic grid');
+    assert.equal(await panelAgain.getByRole('switch').count(),1);
+    const gridRow=panelAgain.locator('.layer').filter({hasText:'Geographic grid'});
+    await panelAgain.locator('.layer-info summary').click();
+    const opacity=gridRow.getByRole('slider',{name:'Geographic grid opacity'});
+    await opacity.press('End');
+    assert.equal(await gridRow.locator('output').first().innerText(),'100%','Opacity is available under Adjust');
+    await panelAgain.getByRole('button',{name:/clear.*search/i}).click();
+    assert.equal(await searchAgain.inputValue(),'');
+    await page.keyboard.press('Escape');
+    assert.equal(await trigger.evaluate(el=>document.activeElement===el),true,'Escape restores trigger focus');
+    console.log(`PASS ${touch?'touch':'desktop'}: focus, base-map disclosure, empty/reset, active filter, clear, Escape`);
+    await page.close();
+  }
+} finally {await browser.close();}

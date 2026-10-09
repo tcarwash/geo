@@ -125,6 +125,7 @@ def layers() -> dict[str, Any]:
             {"id": "volcanoes", "name": "Volcanic activity", "kind": "vector", "status": "available", "source": "NASA EONET", "endpoint": "/api/v1/natural-events/volcanoes"},
             {"id": "floods", "name": "Floods", "kind": "vector", "status": "available", "source": "NASA EONET", "endpoint": "/api/v1/natural-events/floods"},
             {"id": "severe-storms", "name": "Severe storms", "kind": "vector", "status": "available", "source": "NASA EONET", "endpoint": "/api/v1/natural-events/severe-storms"},
+            {"id": "weather-alerts", "name": "Active weather alerts", "kind": "vector", "status": "available", "source": "National Weather Service API", "endpoint": "/api/v1/weather-alerts"},
             {"id": "aurora", "name": "Aurora forecast", "kind": "vector", "status": "available", "source": "NOAA SWPC OVATION", "endpoint": "/api/v1/aurora"},
             {"id": "space-weather", "name": "Planetary K index", "kind": "widget-data", "status": "available", "source": "NOAA SWPC", "endpoint": "/api/v1/space-weather"},
             {"id": "satellites", "name": "Satellite tracks", "kind": "computed", "status": "available", "source": "CelesTrak TLE plus local SGP4", "endpoint": "/api/v1/satellites/{catalog_id}"},
@@ -142,6 +143,7 @@ def layers() -> dict[str, Any]:
             {"id": "goes-track", "name": "GOES satellite positions", "kind": "vector", "status": "available", "source": "CelesTrak SGP4 · GOES-19 / GOES-18", "endpoint": "/api/v1/goes-satellites"},
             {"id": "rbn", "name": "Reverse Beacon Network", "kind": "vector", "status": "available", "source": "Vail ReRBN", "endpoint": "/api/v1/rbn-spots"},
             {"id": "dx-cluster", "name": "DX Cluster paths", "kind": "vector", "status": "available", "source": "DXClusterAPI", "endpoint": "/api/v1/dx-cluster-spots"},
+            {"id": "pota", "name": "Parks on the Air spots", "kind": "vector", "status": "available", "source": "POTA active activator feed", "endpoint": "/api/v1/pota-spots"},
         ],
         "generatedAt": _now(),
     }
@@ -173,6 +175,15 @@ async def natural_event_feed(request: Request, category: str) -> dict[str, Any]:
     except (httpx.HTTPError, TypeError, ValueError, json.JSONDecodeError):
         logger.warning("NASA EONET event feed unavailable: %s", category, exc_info=True)
         raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "Natural-event data is unavailable and no cached response exists."}) from None
+
+
+@app.get("/api/v1/weather-alerts", tags=["data"])
+async def weather_alert_feed(request: Request) -> dict[str, Any]:
+    try:
+        return await sources.nws_active_alerts(request.app.state.http)
+    except (httpx.HTTPError, TypeError, ValueError, json.JSONDecodeError):
+        logger.warning("NWS active-alert feed unavailable", exc_info=True)
+        raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "Active weather alerts are unavailable and no cached response exists."}) from None
 
 
 @app.get("/api/v1/muf", tags=["data"])
@@ -216,6 +227,19 @@ async def dx_cluster_spot_feed(request: Request) -> dict[str, Any]:
     except (httpx.HTTPError, TypeError, ValueError, json.JSONDecodeError):
         logger.warning("DX cluster feed unavailable", exc_info=True)
         raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "DX cluster data is unavailable and no cached response exists."}) from None
+
+
+@app.get("/api/v1/pota-spots", tags=["radio"])
+async def pota_spot_feed(
+    request: Request,
+    latitude: float = Query(ge=-90, le=90),
+    longitude: float = Query(ge=-180, le=180),
+) -> dict[str, Any]:
+    try:
+        return await sources.pota_spots(request.app.state.http, latitude, longitude)
+    except (httpx.HTTPError, TypeError, ValueError, json.JSONDecodeError):
+        logger.warning("POTA active spot feed unavailable", exc_info=True)
+        raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "POTA spot data is unavailable and no cached response exists."}) from None
 
 
 @app.get("/api/v1/storm-tracks", tags=["data"])

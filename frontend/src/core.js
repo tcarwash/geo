@@ -30,6 +30,7 @@ export const LAYERS = [
  {id:'volcanoes',name:'Volcanic activity',subtitle:'NASA EONET · active events',icon:'Mountain',color:'#c2a0ed',on:false,opacity:.9},
  {id:'floods',name:'Floods',subtitle:'NASA EONET · active events',icon:'Waves',color:'#6dbfe0',on:false,opacity:.9},
  {id:'severe-storms',name:'Severe storms',subtitle:'NASA EONET · active events',icon:'TriangleAlert',color:'#f1ca70',on:false,opacity:.9},
+ {id:'weather-alerts',name:'Active weather alerts',subtitle:'National Weather Service · United States',icon:'TriangleAlert',color:'#f28a67',on:false,opacity:.82},
  {id:'aurora',name:'Aurora forecast',subtitle:'NOAA SWPC · model',icon:'Waves',color:'#78cfab',on:false,opacity:.55},
  {id:'satellite',name:'International Space Station',subtitle:'CelesTrak · SGP4 model',icon:'Satellite',color:'#9bbfed',on:false,opacity:.9},
  {id:'goes-track',name:'GOES satellite positions',subtitle:'GOES-19 / GOES-18 · orbital model',icon:'Satellite',color:'#9ad8ed',on:false,opacity:.95},
@@ -47,8 +48,11 @@ export const LAYERS = [
  {id:'pskreporter',name:'PSK Reporter paths',subtitle:'Your transmissions · receiver grids',icon:'RadioTower',color:'#77d9c4',on:false,opacity:.8},
  {id:'rbn',name:'Reverse Beacon Network',subtitle:'RBN · spotter and station grids',icon:'Activity',color:'#eed275',on:false,opacity:.85},
  {id:'dx-cluster',name:'DX Cluster paths',subtitle:'DX Cluster · country-centroid estimates',icon:'Radio',color:'#c6a4ed',on:false,opacity:.8},
+ {id:'pota',name:'Parks on the Air spots',subtitle:'POTA · activator parks and paths from your station',icon:'MapPin',color:'#a6d879',on:false,opacity:.82},
+ {id:'cq-zones',name:'CQ zones',subtitle:'Amateur radio · CQ World Wide zones',icon:'Grid3X3',color:'#76c7d4',on:false,opacity:.22},
+ {id:'itu-zones',name:'ITU zones',subtitle:'Amateur radio · ITU zones',icon:'Grid3X3',color:'#d79bd8',on:false,opacity:.18},
 ];
-export const DEFAULT_STATE = {version:1,base:'atlas',map:{center:[20,8],zoom:null},layers:LAYERS.map(x=>({id:x.id,on:x.on,opacity:x.opacity,...(x.date?{date:x.date}:{})})),widgets:[],station:{name:'My station',callsign:'',lat:45.64,lng:-122.66,zone:Intl.DateTimeFormat().resolvedOptions().timeZone},scale:1,clocks:[{name:'Local',zone:Intl.DateTimeFormat().resolvedOptions().timeZone},{name:'London',zone:'Europe/London'},{name:'Tokyo',zone:'Asia/Tokyo'},{name:'Sydney',zone:'Australia/Sydney'}]};
+export const DEFAULT_STATE = {version:1,base:'atlas',map:{center:[20,8],zoom:null},layers:LAYERS.map(x=>({id:x.id,on:x.on,opacity:x.opacity,showLabels:false,...(x.date?{date:x.date}:{})})),widgets:[],station:{name:'My station',callsign:'',lat:45.64,lng:-122.66,zone:Intl.DateTimeFormat().resolvedOptions().timeZone},scale:1,clocks:[{name:'Local',zone:Intl.DateTimeFormat().resolvedOptions().timeZone},{name:'London',zone:'Europe/London'},{name:'Tokyo',zone:'Asia/Tokyo'},{name:'Sydney',zone:'Australia/Sydney'}]};
 export function validZone(zone) {try {timeLabel(new Date(),zone);return typeof zone==='string'&&zone.length>0;}catch{return false;}}
 export function safeEmbed(value) {try {const u=new URL(value);return ['https:','http:'].includes(u.protocol)&&!u.username&&!u.password?u.href:null;}catch{return null;}}
 const finite=(value,fallback)=>Number.isFinite(Number(value))?Number(value):fallback;
@@ -58,10 +62,10 @@ export function normalizeState(raw) {
  const next={...DEFAULT_STATE};
  next.base=BASE_MAPS.some(b=>b.id===raw.base)?raw.base:'atlas';
  const layers=Array.isArray(raw.layers)?raw.layers:[];
- next.layers=LAYERS.map(d=>{const x=layers.find(l=>l&&l.id===d.id);return {id:d.id,on:x?!!x.on:d.on,opacity:clamp(finite(x?.opacity,d.opacity),0,1),...(d.id==='imagery'?{date:imageryDate(x?.date||d.date)}:{})};});
+ next.layers=LAYERS.map(d=>{const x=layers.find(l=>l&&l.id===d.id);return {id:d.id,on:x?!!x.on:d.on,opacity:clamp(finite(x?.opacity,d.opacity),0,1),showLabels:!!x?.showLabels,...(d.id==='imagery'?{date:imageryDate(x?.date||d.date)}:{})};});
  next.layers.push(...layers.filter(l=>l?.custom).slice(0,8).map(customLayer));
  const order=layers.map(l=>l?.id);next.layers.sort((a,b)=>(order.includes(a.id)?order.indexOf(a.id):99)-(order.includes(b.id)?order.indexOf(b.id):99));
- next.widgets=(Array.isArray(raw.widgets)?raw.widgets:[]).slice(0,12).filter(w=>w&&['note','clock','station','iframe','space-weather'].includes(w.type)&&(w.type!=='iframe'||safeEmbed(w.url))).map((w,i)=>({...w,id:typeof w.id==='string'?w.id:`widget-${i}`,title:String(w.title||'Widget').slice(0,100),zone:validZone(w.zone)?w.zone:'UTC',x:clamp(finite(w.x,120),0,10000),y:clamp(finite(w.y,180),90,10000),width:clamp(finite(w.width,280),220,1600),height:clamp(finite(w.height,180),150,1200),text:String(w.text||'').slice(0,10000),...(w.type==='iframe'?{url:safeEmbed(w.url)}:{})}));
+ next.widgets=(Array.isArray(raw.widgets)?raw.widgets:[]).slice(0,12).filter(w=>w&&['note','clock','station','iframe','space-weather','legend'].includes(w.type)&&(w.type!=='iframe'||safeEmbed(w.url))).map((w,i)=>({...w,id:typeof w.id==='string'?w.id:`widget-${i}`,title:String(w.title||'Widget').slice(0,100),zone:validZone(w.zone)?w.zone:'UTC',x:clamp(finite(w.x,120),0,10000),y:clamp(finite(w.y,180),90,10000),width:clamp(finite(w.width,280),220,1600),height:clamp(finite(w.height,180),150,1200),text:String(w.text||'').slice(0,10000),...(w.type==='iframe'?{url:safeEmbed(w.url)}:{})}));
  next.scale=clamp(finite(raw.scale,1),.85,1.5);
  const station=raw.station&&typeof raw.station==='object'?raw.station:{};
  next.station={...DEFAULT_STATE.station,name:String(station.name||DEFAULT_STATE.station.name),callsign:String(station.callsign||''),lat:clamp(finite(station.lat,DEFAULT_STATE.station.lat),-90,90),lng:clamp(finite(station.lng,DEFAULT_STATE.station.lng),-180,180),zone:validZone(station.zone)?station.zone:DEFAULT_STATE.station.zone};
