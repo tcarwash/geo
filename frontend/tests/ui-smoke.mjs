@@ -38,6 +38,7 @@ try {
     assert.equal(await layers.getAttribute('aria-expanded'),'true');
     const drawer=page.getByRole('complementary',{name:'layers panel'});
     await drawer.waitFor();
+    await drawer.getByText(/Raise and Lower changes the overlay stack/).waitFor();
     await page.getByPlaceholder('Find a layer').fill('Geographic grid');
     const toggle=drawer.getByRole('switch');
     assert.equal(await toggle.count(),1);
@@ -52,23 +53,36 @@ try {
     await close.click();
     await layers.click();
     await page.screenshot({path:`${process.env.TMPDIR || '.'}/geo-ui-layers-${width}.png`});
+    await page.getByPlaceholder('Find a layer').fill('i');
+    await drawer.evaluate(el=>el.scrollTop=el.scrollHeight);
+    const retainedLayerSearch=await page.getByPlaceholder('Find a layer').inputValue();
+    const retainedLayerScroll=await drawer.evaluate(el=>el.scrollTop);
     await page.keyboard.press('Escape');
     assert.equal(await drawer.count(),0);
     await page.locator('.glyph-station').nth(2).click({force:true});
     await page.locator('.feature').waitFor();
     assert.equal(await page.locator('.drawer').count(),0,'Feature details replace, rather than overlap, the panel');
-    await page.getByRole('button',{name:'Close detail'}).click();
+    await layers.click();
+    assert.equal(await page.locator('.feature').count(),0,'Opening a panel dismisses feature details');
+    assert.equal(await page.getByPlaceholder('Find a layer').inputValue(),retainedLayerSearch,'Reopening layers after inspection preserves its search');
+    assert(Math.abs(await drawer.evaluate(el=>el.scrollTop)-retainedLayerScroll)<2,'Reopening layers after inspection restores browser scroll');
+    await page.keyboard.press('Escape');
     await page.getByRole('button',{name:'Go to coordinates or grid'}).click();
     await page.getByLabel('Country, coordinates, or Maidenhead locator').fill(width===390?'Canada':width===320?'CN85qp':'45.64, -122.66');
-    if(width===390) await page.getByRole('button',{name:'Canada',exact:true}).click();
+    if(width===390) await page.getByRole('complementary',{name:'goto panel'}).getByRole('button',{name:'Canada',exact:true}).click();
     else await page.getByRole('button',{name:'Go',exact:true}).click();
     await page.getByRole('status').filter({hasText:'Centered on'}).waitFor();
     assert.equal(await page.locator('.drawer').count(),0,'Go to closes after centering on a local destination');
     if(width===1920){
+      await page.route('**/api/v1/earthquakes*',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({status:'current',kind:'observation',fetchedAt:'2026-10-09T20:05:00Z',dataTime:'2026-10-09T20:00:00Z',validFrom:'2026-10-09T19:55:00Z',data:{type:'FeatureCollection',features:[]}})}));
       await layers.click();
       await page.getByPlaceholder('Find a layer').fill('Earthquakes');
       const earthquake=drawer.getByRole('switch',{name:'Earthquakes'});
       if(await earthquake.getAttribute('aria-checked')==='false')await earthquake.click();
+      await drawer.locator('.layer-status').filter({hasText:'Observed'}).waitFor();
+      const earthquakeRow=drawer.locator('.layer').filter({hasText:'Earthquakes'});
+      await earthquakeRow.locator('.layer-info summary').click();
+      for(const label of ['Observed','Valid from','Retrieved'])await earthquakeRow.locator('.source-times dt').getByText(label,{exact:true}).waitFor();
       await page.keyboard.press('Escape');
       await page.getByRole('button',{name:'Widgets',exact:true}).click();
       await page.getByRole('button',{name:/Layer legend/}).click();
@@ -81,6 +95,12 @@ try {
         await page.getByPlaceholder('Find a layer').fill(name);
         const layerSwitch=drawer.getByRole('switch',{name});
         if(await layerSwitch.getAttribute('aria-checked')==='false')await layerSwitch.click();
+        if(name==='Maximum usable frequency'){
+          const row=drawer.locator('.layer').filter({hasText:name});
+          await row.locator('.layer-info summary').click();
+          assert.equal(await row.getByRole('button',{name:'Raise',exact:true}).isDisabled(),true,'Fixed-order MUF cannot be raised');
+          assert.equal(await row.getByRole('button',{name:'Lower',exact:true}).isDisabled(),true,'Fixed-order MUF cannot be lowered');
+        }
         await page.keyboard.press('Escape');
       }
       await legend.getByText('mm/h',{exact:true}).waitFor();

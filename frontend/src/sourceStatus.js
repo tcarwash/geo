@@ -11,3 +11,21 @@ export function sourceStatusLabel(id,feed,formatAge=value=>value){
   if(REFERENCE.has(id))return 'Reference';
   return 'Waiting for source';
 }
+
+export function sourceStatusTone(feed){
+  if(feed?.loading)return 'loading';
+  if(feed?.status==='stale'||feed?.staleReason||((feed?.error||feed?.status==='unavailable')&&feed?.dataTime))return 'stale';
+  if(feed?.error||feed?.status==='unavailable')return 'unavailable';
+  return '';
+}
+
+export function sourceTimeDetails(feed,formatTime=value=>value){
+  if(!feed)return [];
+  const productLabel={observation:'Observed',forecast:'Issued',model:'Model time',composite:'Product time',reference:'Reference time',user:'Data time'}[feed.kind]||'Data time';
+  return [
+    ...(feed.dataTime?[[productLabel,formatTime(feed.dataTime)]]:[]),
+    ...(feed.validFrom?[['Valid from',formatTime(feed.validFrom)]]:[]),
+    ...(feed.validTo?[['Valid until',formatTime(feed.validTo)]]:[]),
+    ...(feed.fetchedAt?[['Retrieved',formatTime(feed.fetchedAt)]]:[]),
+  ];
+}

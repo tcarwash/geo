@@ -10,7 +10,7 @@ This is primarily a proposal, not an implementation or source-availability claim
 
 The application already includes searchable All/Active layer filtering, a collapsed base-map selector, focus restoration, world clocks, editable widgets, annotations, saved layouts, custom sources, and read-only mode. Existing layers include earthquakes, EONET hazards, aurora, ISS and GOES positions, several cloud/imagery products, precipitation, lightning density, tropical storm tracks, MUF/absorption, radio reports, POTA, radio grids/zones, and opt-in National Weather Service active alerts. Improve these before introducing duplicates.
 
-The frontend suite currently passes 41 unit tests; six-viewport smoke checks and both desktop/touch layer-browser smoke checks pass. The backend suite currently passes 19 tests. Vite emits a Leaflet Geoman CSS source-map warning, but the build succeeds. `CAPABILITIES.md` and `PLAN.md` contain historical verification counts and should be reconciled before release.
+The frontend suite now passes 43 unit tests; six-viewport smoke checks cover source-time details, fixed-order controls, and restoring layer search/scroll after inspection, alongside desktop/touch layer-browser checks. The backend suite's last recorded baseline is 19 passing tests; backend tests were not rerun for this UI-only slice. Vite emits a Leaflet Geoman CSS source-map warning, but the build succeeds. `CAPABILITIES.md` and `PLAN.md` contain historical verification counts and should be reconciled before release.
 
 ## Phase 1 — Make the existing product easier to use
 
