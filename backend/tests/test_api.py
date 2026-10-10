@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -11,8 +12,11 @@ from zipfile import ZipFile
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from app import adif, db, sources
+from app import main as api
+from app.feed_stream import FeedStreamHub
 from app.main import app
 
 
@@ -161,6 +165,130 @@ def test_geometry_and_secret_validation(client: TestClient):
         "/api/v1/layouts", json={"name": "Leaked", "state": {"provider": {"accessToken": "no"}}}
     )
     assert layout_secret.status_code == 422
+
+
+@pytest.fixture
+def public_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(db, "settings", replace(db.settings, database_path=tmp_path / "public-test.sqlite3"))
+    monkeypatch.setattr(api, "settings", replace(api.settings, deployment_mode="public"))
+    monkeypatch.setenv("GEO_EDIT_TOKEN", "public-test-secret")
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def test_public_runtime_declares_local_only_preferences_and_disabled_private_layers(public_client: TestClient):
+    response = public_client.get("/api/v1/runtime")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json() == {
+        "deploymentMode": "public",
+        "sharedState": False,
+        "writeEnabled": False,
+        "disabledLayers": ["contacts", "pskreporter", "pota", "wsjtx"],
+    }
+    assert "public-test-secret" not in response.text
+    catalog = public_client.get("/api/v1/layers")
+    assert catalog.headers["cache-control"] == "public, max-age=30, s-maxage=30"
+    assert not {"adif", "pskreporter", "pota", "wsjtx"}.intersection(layer["id"] for layer in catalog.json()["layers"])
+
+
+def test_private_api_reads_are_explicitly_non_shared(client: TestClient):
+    response = client.get("/api/v1/runtime")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+
+
+def test_public_feed_responses_allow_shared_cache_while_runtime_stays_private(public_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    async def feed(_http):
+        return {"status": "current", "data": {"kp": 2}}
+
+    monkeypatch.setattr(api.sources, "space_weather", feed)
+    response = public_client.get("/api/v1/space-weather")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "public, max-age=30, s-maxage=30"
+    assert "set-cookie" not in response.headers
+
+    runtime_response = public_client.get("/api/v1/runtime")
+    assert runtime_response.headers["cache-control"] == "no-store"
+
+
+def test_public_runtime_blocks_shared_state_and_personal_feed_reads(public_client: TestClient):
+    for path in (
+        "/api/v1/layouts",
+        "/api/v1/drawings",
+        "/api/v1/settings",
+        "/api/v1/adif/contacts",
+        "/api/v1/psk-reporter?callsign=N0CALL&latitude=45&longitude=-122",
+        "/api/v1/pota-spots?latitude=45&longitude=-122",
+        "/api/v1/wsjtx/heard",
+    ):
+        response = public_client.get(path)
+        assert response.status_code == 404, f"{path} should be unavailable in public mode"
+        assert response.headers["cache-control"] == "no-store", f"{path} must not cache a private-state denial"
+
+
+def test_public_runtime_rejects_all_shared_writes_even_with_edit_token(public_client: TestClient):
+    requests = (
+        ("post", "/api/v1/future-write", {}),
+        ("post", "/api/v1/layouts", {"json": {"name": "Shared", "state": {}}}),
+        ("put", "/api/v1/layouts/not-found", {"headers": {"If-Match": '"1"'}, "json": {"name": "Shared", "state": {}}}),
+        ("delete", "/api/v1/layouts/not-found", {"headers": {"If-Match": '"1"'}}),
+        ("put", "/api/v1/drawings", {"headers": {"If-Match": '"0"'}, "json": {"collection": {"type": "FeatureCollection", "features": []}}}),
+        ("put", "/api/v1/settings", {"headers": {"If-Match": '"0"'}, "json": {"settings": {"displayScale": 1}}}),
+        ("post", "/api/v1/adif/import", {"content": "<EOH><EOR>"}),
+    )
+    for method, path, options in requests:
+        options.setdefault("headers", {})["X-Geo-Edit-Token"] = "public-test-secret"
+        response = getattr(public_client, method)(path, **options)
+        assert response.status_code == 403, f"{method.upper()} {path} should be blocked in public mode"
+        assert response.headers["cache-control"] == "no-store"
+        assert response.json()["detail"]["code"] == "public_read_only"
+
+
+def test_public_runtime_does_not_start_the_local_wsjt_listener(public_client: TestClient):
+    assert api.app.state.wsjtx_listener is None
+
+
+@pytest.mark.asyncio
+async def test_public_feed_stream_pushes_initial_feed_snapshot(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(api, "settings", replace(api.settings, deployment_mode="public"))
+
+    async def fetch_feed(topic: str) -> dict:
+        return {"source": topic, "status": "current", "data": {"features": []}}
+
+    hub = FeedStreamHub(fetch_feed, min_refresh_seconds=0.01)
+    await hub.start()
+    monkeypatch.setattr(api.app.state, "feed_stream", hub, raising=False)
+    request = Request({"type": "http", "app": api.app, "method": "GET", "scheme": "http", "path": "/api/v1/feed-stream", "raw_path": b"/api/v1/feed-stream", "query_string": b"topics=earthquakes", "headers": [], "client": ("test", 1), "server": ("test", 80), "root_path": ""})
+    try:
+        response = await api.public_feed_stream(request, "earthquakes")
+        assert response.headers["content-type"].startswith("text/event-stream")
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["x-accel-buffering"] == "no"
+        chunk = await response.body_iterator.__anext__()
+        assert chunk.startswith("event: feed")
+        message = json.loads(chunk.splitlines()[1].removeprefix("data: "))
+        assert message["type"] == "snapshot"
+        assert message["topic"] == "earthquakes"
+        assert message["feed"]["data"] == {"features": []}
+    finally:
+        await hub.close()
+
+
+@pytest.mark.asyncio
+async def test_public_feed_stream_rejects_private_topics(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(api, "settings", replace(api.settings, deployment_mode="public"))
+    request = Request({"type": "http", "app": api.app, "method": "GET", "scheme": "http", "path": "/api/v1/feed-stream", "raw_path": b"/api/v1/feed-stream", "query_string": b"topics=contacts", "headers": [], "client": ("test", 1), "server": ("test", 80), "root_path": ""})
+    with pytest.raises(api.HTTPException) as error:
+        await api.public_feed_stream(request, "contacts")
+    assert error.value.status_code == 422
+
+
+def test_private_runtime_keeps_shared_state_apis_available(client: TestClient):
+    response = client.get("/api/v1/runtime")
+    assert response.json() == {"deploymentMode": "private", "sharedState": True, "writeEnabled": True, "disabledLayers": []}
+    assert client.get("/api/v1/layouts").status_code == 200
+    assert client.get("/api/v1/drawings").status_code == 200
 
 
 def test_edit_token_protects_writes(client: TestClient, monkeypatch: pytest.MonkeyPatch):

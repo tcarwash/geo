@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hmac
 import json
 import logging
@@ -9,31 +10,76 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from redis.asyncio import Redis
 
-from . import adif, db, sources
+from . import adif, db, sources, wsjtx
 from .config import settings
+from .feed_stream import PUBLIC_FEED_ROUTES, FeedStreamHub, parse_topics
 from .schemas import DrawingUpdate, LayoutCreate, LayoutUpdate, SettingsUpdate
 
 logger = logging.getLogger("geo.api")
 MAX_LAYOUT_BYTES = 1_000_000
+PUBLIC_DISABLED_LAYERS = ("contacts", "pskreporter", "pota", "wsjtx")
+CDN_CACHEABLE_PUBLIC_PATHS = {"/api/v1/layers", *(urlsplit(route).path for route in PUBLIC_FEED_ROUTES.values())}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     db.initialize()
+    app.state.wsjtx_heard = wsjtx.HeardStations()
+    app.state.wsjtx_listener = None
+    app.state.wsjtx_listener_error = False
+    app.state.wsjtx_udp_address = None
+    if settings.deployment_mode != "public":
+        try:
+            app.state.wsjtx_listener, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+                lambda: wsjtx.WSJTXProtocol(app.state.wsjtx_heard),
+                local_addr=(settings.wsjtx_udp_host, settings.wsjtx_udp_port),
+            )
+            app.state.wsjtx_udp_address = app.state.wsjtx_listener.get_extra_info("sockname")[:2]
+        except OSError:
+            app.state.wsjtx_listener_error = True
+            logger.warning("WSJT-X UDP listener could not bind its configured port", exc_info=True)
     app.state.http = httpx.AsyncClient(
         timeout=httpx.Timeout(settings.request_timeout_seconds),
         headers={"User-Agent": settings.user_agent, "Accept": "application/json"},
         follow_redirects=False,
     )
+    app.state.feed_internal_http = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://geo-internal"
+    )
+    app.state.feed_redis = None
+    app.state.feed_stream = None
     try:
+        if settings.redis_url:
+            app.state.feed_redis = Redis.from_url(settings.redis_url, decode_responses=True)
+            await app.state.feed_redis.ping()
+
+        async def fetch_public_feed(topic: str) -> dict[str, Any]:
+            response = await app.state.feed_internal_http.get(PUBLIC_FEED_ROUTES[topic])
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise TypeError("Public feed endpoint returned a non-object response")
+            return payload
+
+        app.state.feed_stream = FeedStreamHub(fetch_public_feed, redis=app.state.feed_redis)
+        await app.state.feed_stream.start()
         yield
     finally:
+        if app.state.feed_stream:
+            await app.state.feed_stream.close()
+        if app.state.feed_redis:
+            await app.state.feed_redis.aclose()
+        await app.state.feed_internal_http.aclose()
+        if app.state.wsjtx_listener:
+            app.state.wsjtx_listener.close()
         await app.state.http.aclose()
 
 
@@ -53,6 +99,27 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def browser_cache_policy(request: Request, call_next):
+    if settings.deployment_mode == "public" and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": {"code": "public_read_only", "message": "Public mode does not allow server writes."}},
+            headers={"Cache-Control": "no-store"},
+        )
+    response = await call_next(request)
+    if request.url.path.startswith("/api/v1/"):
+        if request.method != "GET" or settings.deployment_mode != "public":
+            response.headers["Cache-Control"] = "private, no-store"
+        elif response.status_code >= 400 or request.url.path in {"/api/v1/runtime", "/api/v1/feed-stream"}:
+            response.headers["Cache-Control"] = "no-store"
+        elif request.url.path in CDN_CACHEABLE_PUBLIC_PATHS:
+            response.headers["Cache-Control"] = "public, max-age=30, s-maxage=30"
+        else:
+            response.headers["Cache-Control"] = "private, max-age=30"
+    return response
+
+
 def _now() -> str:
     return db.iso()
 
@@ -67,9 +134,16 @@ def _json_size(value: Any, maximum: int = MAX_LAYOUT_BYTES) -> None:
 
 
 def _edit_access(x_geo_edit_token: str | None = Header(default=None)) -> None:
+    if settings.deployment_mode == "public":
+        raise HTTPException(status_code=403, detail={"code": "public_read_only", "message": "Public mode does not allow shared server writes."})
     required = os.getenv("GEO_EDIT_TOKEN")
     if required and (not x_geo_edit_token or not hmac.compare_digest(required, x_geo_edit_token)):
         raise HTTPException(status_code=401, detail={"code": "edit_auth_required", "message": "A valid edit token is required."})
+
+
+def _private_state_access() -> None:
+    if settings.deployment_mode == "public":
+        raise HTTPException(status_code=404, detail={"code": "feature_disabled_public", "message": "This user-specific feature is unavailable in public mode."})
 
 
 def _revision_header(response: Response, revision: int) -> None:
@@ -113,10 +187,20 @@ def health() -> dict[str, Any]:
     return {"status": "ok" if storage == "ok" else "degraded", "storage": storage, "time": _now()}
 
 
+@app.get("/api/v1/runtime", tags=["system"])
+def runtime() -> dict[str, Any]:
+    public = settings.deployment_mode == "public"
+    return {
+        "deploymentMode": settings.deployment_mode,
+        "sharedState": not public,
+        "writeEnabled": not public,
+        "disabledLayers": list(PUBLIC_DISABLED_LAYERS) if public else [],
+    }
+
+
 @app.get("/api/v1/layers", tags=["catalog"])
 def layers() -> dict[str, Any]:
-    return {
-        "layers": [
+    catalog = [
             {"id": "political-atlas", "name": "Political atlas", "kind": "base", "status": "available", "source": "Natural Earth"},
             {"id": "day-night", "name": "Day and night", "kind": "computed", "status": "available", "source": "Solar position calculation"},
             {"id": "maidenhead", "name": "Maidenhead grid", "kind": "computed", "status": "available", "source": "Amateur radio locator grid"},
@@ -141,13 +225,41 @@ def layers() -> dict[str, Any]:
             {"id": "lightning", "name": "Lightning density", "kind": "raster", "status": "available", "source": "NOAA nowCOAST WMS"},
             {"id": "storms", "name": "Tropical storm tracks", "kind": "vector", "status": "available", "source": "NOAA National Hurricane Center", "endpoint": "/api/v1/storm-tracks"},
             {"id": "pskreporter", "name": "PSK Reporter paths", "kind": "vector", "status": "available", "source": "PSK Reporter", "endpoint": "/api/v1/psk-reporter"},
+            {"id": "wsjtx", "name": "WSJT-X heard stations", "kind": "local-observation", "status": "available", "source": "WSJT-X local UDP decoded messages", "endpoint": "/api/v1/wsjtx/heard"},
             {"id": "goes-track", "name": "GOES satellite positions", "kind": "vector", "status": "available", "source": "CelesTrak SGP4 · GOES-19 / GOES-18", "endpoint": "/api/v1/goes-satellites"},
             {"id": "rbn", "name": "Reverse Beacon Network", "kind": "vector", "status": "available", "source": "Vail ReRBN", "endpoint": "/api/v1/rbn-spots"},
             {"id": "dx-cluster", "name": "DX Cluster paths", "kind": "vector", "status": "available", "source": "DXClusterAPI", "endpoint": "/api/v1/dx-cluster-spots"},
             {"id": "pota", "name": "Parks on the Air spots", "kind": "vector", "status": "available", "source": "POTA active activator feed", "endpoint": "/api/v1/pota-spots"},
-        ],
-        "generatedAt": _now(),
-    }
+    ]
+    if settings.deployment_mode == "public":
+        catalog = [layer for layer in catalog if layer["id"] not in {*PUBLIC_DISABLED_LAYERS, "adif"}]
+    return {"layers": catalog, "generatedAt": _now()}
+
+
+@app.get("/api/v1/feed-stream", tags=["data"])
+async def public_feed_stream(request: Request, topics: str = Query(min_length=1, max_length=1024)) -> StreamingResponse:
+    if settings.deployment_mode != "public":
+        raise HTTPException(status_code=404, detail={"code": "feature_disabled_public", "message": "Live public feed stream is unavailable in private mode."})
+    try:
+        selected_topics = parse_topics(topics)
+    except ValueError:
+        raise HTTPException(status_code=422, detail={"code": "invalid_feed_topics", "message": "One or more feed topics are unsupported."}) from None
+    hub: FeedStreamHub = request.app.state.feed_stream
+
+    async def events() -> AsyncIterator[str]:
+        async with hub.subscribe(selected_topics) as queue:
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=hub.heartbeat_seconds)
+                    yield f"event: feed\ndata: {json.dumps(event, separators=(',', ':'), ensure_ascii=False)}\n\n"
+                except TimeoutError:
+                    yield ": keep-alive\n\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
 
 
 @app.get("/api/v1/earthquakes", tags=["data"])
@@ -205,7 +317,7 @@ async def muf_feed(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "MUF forecast data is unavailable and no cached response exists."}) from None
 
 
-@app.get("/api/v1/psk-reporter", tags=["radio"])
+@app.get("/api/v1/psk-reporter", tags=["radio"], dependencies=[Depends(_private_state_access)])
 async def psk_reporter_feed(
     request: Request,
     callsign: str = Query(min_length=3, max_length=16),
@@ -219,6 +331,21 @@ async def psk_reporter_feed(
     except (httpx.HTTPError, TypeError, json.JSONDecodeError):
         logger.warning("PSK Reporter feed unavailable", exc_info=True)
         raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "PSK Reporter data is unavailable and no cached response exists."}) from None
+
+
+@app.get("/api/v1/wsjtx/heard", tags=["radio"], dependencies=[Depends(_private_state_access)])
+def wsjtx_heard_feed(
+    request: Request,
+    station_call: str | None = Query(default=None, max_length=16),
+) -> dict[str, Any]:
+    own_call = station_call.strip().upper() if station_call else None
+    if own_call and not wsjtx.is_callsign(own_call):
+        raise HTTPException(status_code=422, detail={"code": "invalid_callsign", "message": "station_call must be a valid amateur-radio callsign."})
+    return request.app.state.wsjtx_heard.snapshot(
+        station_call=own_call,
+        listener_error=request.app.state.wsjtx_listener_error,
+        udp_port=settings.wsjtx_udp_port,
+    )
 
 
 @app.get("/api/v1/rbn-spots", tags=["radio"])
@@ -239,7 +366,7 @@ async def dx_cluster_spot_feed(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "DX cluster data is unavailable and no cached response exists."}) from None
 
 
-@app.get("/api/v1/pota-spots", tags=["radio"])
+@app.get("/api/v1/pota-spots", tags=["radio"], dependencies=[Depends(_private_state_access)])
 async def pota_spot_feed(
     request: Request,
     latitude: float = Query(ge=-90, le=90),
@@ -363,7 +490,7 @@ async def import_adif(
     }
 
 
-@app.get("/api/v1/adif/contacts", tags=["radio"])
+@app.get("/api/v1/adif/contacts", tags=["radio"], dependencies=[Depends(_private_state_access)])
 def list_adif_contacts(
     band: str | None = None,
     mode: str | None = None,
@@ -424,7 +551,7 @@ def list_adif_contacts(
     }
 
 
-@app.get("/api/v1/layouts", tags=["layouts"])
+@app.get("/api/v1/layouts", tags=["layouts"], dependencies=[Depends(_private_state_access)])
 def list_layouts() -> dict[str, Any]:
     with db.connection() as conn:
         rows = conn.execute("SELECT * FROM layouts ORDER BY name COLLATE NOCASE, id").fetchall()
@@ -446,7 +573,7 @@ def create_layout(payload: LayoutCreate, response: Response) -> dict[str, Any]:
     return _layout(row)
 
 
-@app.get("/api/v1/layouts/{layout_id}", tags=["layouts"])
+@app.get("/api/v1/layouts/{layout_id}", tags=["layouts"], dependencies=[Depends(_private_state_access)])
 def get_layout(layout_id: str, response: Response) -> dict[str, Any]:
     with db.connection() as conn:
         row = conn.execute("SELECT * FROM layouts WHERE id=?", (layout_id,)).fetchone()
@@ -497,7 +624,7 @@ def delete_layout(layout_id: str, if_match: str | None = Header(default=None, al
     return Response(status_code=204)
 
 
-@app.get("/api/v1/drawings", tags=["drawings"])
+@app.get("/api/v1/drawings", tags=["drawings"], dependencies=[Depends(_private_state_access)])
 def get_drawings(response: Response) -> dict[str, Any]:
     with db.connection() as conn:
         row = conn.execute("SELECT * FROM drawings WHERE singleton=1").fetchone()
@@ -539,7 +666,7 @@ def put_drawings(
     return {"collection": collection, "revision": revision, "updatedAt": now}
 
 
-@app.get("/api/v1/settings", tags=["settings"])
+@app.get("/api/v1/settings", tags=["settings"], dependencies=[Depends(_private_state_access)])
 def get_settings(response: Response) -> dict[str, Any]:
     with db.connection() as conn:
         row = conn.execute("SELECT * FROM settings WHERE singleton=1").fetchone()

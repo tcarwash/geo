@@ -1,5 +1,16 @@
 import {clamp,RAD} from './core.js';
 
+const wrapLongitude=longitude=>((longitude+180)%360+360)%360-180;
+
+export function clockTimeScaleShift(date,reference,solarLongitude){
+ if(!reference||!reference.zone||!Number.isFinite(reference.longitude))return 0;
+ const parts=new Intl.DateTimeFormat('en-GB',{timeZone:reference.zone,hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(date);
+ const value=type=>Number(parts.find(part=>part.type===type)?.value||0);
+ const localHour=value('hour')+value('minute')/60+value('second')/3600;
+ const solarHour=12+wrapLongitude(reference.longitude-solarLongitude)/15;
+ return ((solarHour-localHour+12)%24+24)%24-12;
+}
+
 export function solarHourAngle(latitude,declination,altitude=0){
  const phi=clamp(latitude,-90,90)*RAD,dec=clamp(declination,-90,90)*RAD,h=altitude*RAD;
  const denominator=Math.cos(phi)*Math.cos(dec);

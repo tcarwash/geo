@@ -1,4 +1,14 @@
 services:
+  geo-events:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   geo-web:
     build: ./frontend
     restart: unless-stopped
@@ -12,8 +22,13 @@ services:
     build:
       context: ./backend
     restart: unless-stopped
+    depends_on:
+      geo-events:
+        condition: service_healthy
     environment:
       GEO_DATABASE_PATH: /data/geo.sqlite3
+      GEO_DEPLOYMENT_MODE: ${GEO_DEPLOYMENT_MODE:-private}
+      GEO_REDIS_URL: ${GEO_REDIS_URL:-redis://geo-events:6379/0}
       GEO_FORWARDED_ALLOW_IPS: ${GEO_FORWARDED_ALLOW_IPS:-127.0.0.1,::1}
       GEO_SATELLITE_CATALOG_IDS: ${GEO_SATELLITE_CATALOG_IDS:-25544,51850,60133}
       GEO_CORS_ORIGINS: ${GEO_CORS_ORIGINS:-http://localhost:5173,https://geo.ag7su.com}
@@ -21,8 +36,11 @@ services:
       GEO_REQUEST_TIMEOUT_SECONDS: ${GEO_REQUEST_TIMEOUT_SECONDS:-12}
       GEO_USER_AGENT: ${GEO_USER_AGENT:-GeoDashboard/0.1 (self-hosted geographic display)}
       GEO_EDIT_TOKEN: ${GEO_EDIT_TOKEN:-}
+      GEO_WSJT_X_UDP_HOST: 0.0.0.0
+      GEO_WSJT_X_UDP_PORT: ${GEO_WSJT_X_UDP_PORT:-2237}
     ports:
       - "${GEO_API_BIND:-127.0.0.1}:${GEO_API_PORT:-8081}:8080"
+      - "${GEO_WSJT_X_UDP_BIND:-127.0.0.1}:${GEO_WSJT_X_UDP_PORT:-2237}:${GEO_WSJT_X_UDP_PORT:-2237}/udp"
     volumes:
       - geo-data:/data
     healthcheck:

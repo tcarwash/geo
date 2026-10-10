@@ -51,10 +51,12 @@ export const LAYERS = [
  {id:'rbn',name:'Reverse Beacon Network',subtitle:'RBN · spotter and station grids',icon:'Activity',color:'#eed275',on:false,opacity:.85},
  {id:'dx-cluster',name:'DX Cluster paths',subtitle:'DX Cluster · country-centroid estimates',icon:'Radio',color:'#c6a4ed',on:false,opacity:.8},
  {id:'pota',name:'Parks on the Air spots',subtitle:'POTA · activator parks and paths from your station',icon:'MapPin',color:'#a6d879',on:false,opacity:.82},
+ {id:'wsjtx',name:'WSJT-X heard stations',subtitle:'WSJT-X · local UDP decoded messages',icon:'RadioTower',color:'#70cdb8',on:false,opacity:.9},
  {id:'cq-zones',name:'CQ zones',subtitle:'Amateur radio · CQ World Wide zones',icon:'Grid3X3',color:'#76c7d4',on:false,opacity:.22},
  {id:'itu-zones',name:'ITU zones',subtitle:'Amateur radio · ITU zones',icon:'Grid3X3',color:'#d79bd8',on:false,opacity:.18},
 ];
-export const DEFAULT_STATE = {version:1,base:'atlas',map:{center:[20,8],zoom:null},layers:LAYERS.map(x=>({id:x.id,on:x.on,opacity:x.opacity,showLabels:false,...(x.date?{date:x.date}:{})})),widgets:[],station:{name:'My station',callsign:'',lat:45.64,lng:-122.66,zone:Intl.DateTimeFormat().resolvedOptions().timeZone},scale:1,clocks:[{name:'Local',zone:Intl.DateTimeFormat().resolvedOptions().timeZone},{name:'London',zone:'Europe/London'},{name:'Tokyo',zone:'Asia/Tokyo'},{name:'Sydney',zone:'Australia/Sydney'}]};
+const DEFAULT_CLOCKS=[{name:'Local',zone:Intl.DateTimeFormat().resolvedOptions().timeZone,useStation:true,lat:null,lng:null},{name:'London',zone:'Europe/London',lat:51.5074,lng:-.1278},{name:'Tokyo',zone:'Asia/Tokyo',lat:35.6762,lng:139.6503},{name:'Sydney',zone:'Australia/Sydney',lat:-33.8688,lng:151.2093}];
+export const DEFAULT_STATE = {version:1,base:'atlas',map:{center:[20,8],zoom:null},layers:LAYERS.map(x=>({id:x.id,on:x.on,opacity:x.opacity,showLabels:false,...(x.date?{date:x.date}:{})})),widgets:[],station:{name:'My station',callsign:'',lat:45.64,lng:-122.66,zone:Intl.DateTimeFormat().resolvedOptions().timeZone},scale:1,clocks:DEFAULT_CLOCKS};
 export function validZone(zone) {try {timeLabel(new Date(),zone);return typeof zone==='string'&&zone.length>0;}catch{return false;}}
 export function safeEmbed(value) {try {const u=new URL(value);return ['https:','http:'].includes(u.protocol)&&!u.username&&!u.password?u.href:null;}catch{return null;}}
 const finite=(value,fallback)=>Number.isFinite(Number(value))?Number(value):fallback;
@@ -71,7 +73,7 @@ export function normalizeState(raw) {
  next.scale=clamp(finite(raw.scale,1),.85,1.5);
  const station=raw.station&&typeof raw.station==='object'?raw.station:{};
  next.station={...DEFAULT_STATE.station,name:String(station.name||DEFAULT_STATE.station.name),callsign:String(station.callsign||''),lat:clamp(finite(station.lat,DEFAULT_STATE.station.lat),-90,90),lng:clamp(finite(station.lng,DEFAULT_STATE.station.lng),-180,180),zone:validZone(station.zone)?station.zone:DEFAULT_STATE.station.zone};
- next.clocks=(Array.isArray(raw.clocks)?raw.clocks:DEFAULT_STATE.clocks).slice(0,4).filter(c=>c&&validZone(c.zone)).map(c=>({name:String(c.name||c.zone),zone:c.zone}));
+ next.clocks=(Array.isArray(raw.clocks)?raw.clocks:DEFAULT_STATE.clocks).slice(0,4).filter(c=>c&&validZone(c.zone)).map(c=>{const defaults=DEFAULT_STATE.clocks.find(clock=>clock.name===c.name&&clock.zone===c.zone),useStation=c.useStation===true||c.name==='Local';const coordinate=(key,bound)=>{const value=Object.hasOwn(c,key)?c[key]:defaults?.[key];if(value===null||value===''||value===undefined)return null;const number=Number(value);return Number.isFinite(number)?clamp(number,bound[0],bound[1]):null;};return {name:String(c.name||c.zone),zone:c.zone,useStation,lat:useStation?null:coordinate('lat',[-90,90]),lng:useStation?null:coordinate('lng',[-180,180])};});
  if(Array.isArray(raw.map?.center)&&raw.map.center.length===2&&raw.map.center.every(Number.isFinite))next.map={center:[clamp(raw.map.center[0],-85,85),clamp(raw.map.center[1],-220,220)],zoom:raw.map.zoom===null?null:clamp(finite(raw.map.zoom,2),.25,8)};
  return next;
 }

@@ -1,4 +1,4 @@
-const POINT_IDS=new Set(['earthquakes','wildfires','volcanoes','floods','severe-storms','weather-alerts','aurora','satellite','goes-track','contacts','pskreporter','rbn','dx-cluster','pota','storms','cq-zones','itu-zones']);
+const POINT_IDS=new Set(['earthquakes','wildfires','volcanoes','floods','severe-storms','weather-alerts','aurora','satellite','goes-track','contacts','pskreporter','rbn','dx-cluster','pota','wsjtx','storms','cq-zones','itu-zones']);
 const RASTER_UNITS={muf:'MHz',precipitation:'mm/h','hf-absorption':'dB'};
 
 export function activeLegendItems(layers,definitions){
