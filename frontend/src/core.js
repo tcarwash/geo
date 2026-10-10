@@ -25,6 +25,8 @@ export const LAYERS = [
  {id:'imagery',name:'Satellite true color',subtitle:'NASA GIBS · dated imagery',icon:'Layers3',color:'#84cfce',on:false,opacity:.7,date:yesterday()},
  {id:'night',name:'Day & night',subtitle:'Solar terminator · computed',icon:'Sun',color:'#e1c77a',on:true,opacity:.78},
  {id:'graticule',name:'Geographic grid',subtitle:'Latitude & longitude · reference',icon:'Grid3X3',color:'#89b3bc',on:true,opacity:.28},
+ {id:'dateline',name:'International Date Line',subtitle:'Approximate · 180° meridian',icon:'Clock',color:'#e0c77f',on:false,opacity:.9},
+ {id:'air-quality',name:'Air quality · PM2.5',subtitle:'CAMS global · coarse sampled forecast',icon:'Wind',color:'#f09a68',on:false,opacity:.46},
  {id:'earthquakes',name:'Earthquakes',subtitle:'USGS · observed',icon:'Activity',color:'#edaa69',on:false,opacity:.9},
  {id:'wildfires',name:'Wildfires',subtitle:'NASA EONET · active events',icon:'Flame',color:'#ff8b61',on:false,opacity:.9},
  {id:'volcanoes',name:'Volcanic activity',subtitle:'NASA EONET · active events',icon:'Mountain',color:'#c2a0ed',on:false,opacity:.9},

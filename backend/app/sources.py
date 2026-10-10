@@ -39,6 +39,9 @@ RBN_SPOTS = "https://vailrerbn.com/api/v1/spots"
 DXCLUSTER_SPOTS = "https://dxc.jo30.de/dxcache/spots"
 POTA_SPOTS = "https://api.pota.app/spot/activator"
 GOES_CATALOG_IDS = {"GOES-East": 60133, "GOES-West": 51850}
+OPEN_METEO_AIR_QUALITY = "https://air-quality-api.open-meteo.com/v1/air-quality"
+AIR_QUALITY_GRID_STEP = 12
+AIR_QUALITY_BATCH_SIZE = 100
 
 
 def _parse_epoch_ms(value: Any) -> str | None:
@@ -58,6 +61,81 @@ def _parse_iso(value: Any) -> str | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _air_quality_coordinates() -> list[tuple[float, float]]:
+    half_step = AIR_QUALITY_GRID_STEP // 2
+    latitudes = range(-90 + half_step, 90, AIR_QUALITY_GRID_STEP)
+    longitudes = range(-180 + half_step, 180, AIR_QUALITY_GRID_STEP)
+    return [(float(latitude), float(longitude)) for latitude in latitudes for longitude in longitudes]
+
+
+async def air_quality(client: httpx.AsyncClient) -> dict[str, Any]:
+    key = "open-meteo:cams-global:air-quality:pm25:12deg"
+
+    async def fetch() -> dict[str, Any]:
+        coordinates = _air_quality_coordinates()
+        features: list[dict[str, Any]] = []
+        data_times: list[str] = []
+        for offset in range(0, len(coordinates), AIR_QUALITY_BATCH_SIZE):
+            batch = coordinates[offset : offset + AIR_QUALITY_BATCH_SIZE]
+            response = await client.get(
+                OPEN_METEO_AIR_QUALITY,
+                params={
+                    "latitude": ",".join(str(latitude) for latitude, _ in batch),
+                    "longitude": ",".join(str(longitude) for _, longitude in batch),
+                    "current": "pm2_5,pm10",
+                    "domains": "cams_global",
+                    "cell_selection": "nearest",
+                    "timezone": "GMT",
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+            results = payload if isinstance(payload, list) else [payload]
+            if len(results) != len(batch) or any(not isinstance(item, dict) for item in results):
+                raise TypeError("Open-Meteo air-quality response location count does not match request")
+            for (latitude, longitude), result in zip(batch, results, strict=True):
+                current = result.get("current")
+                if not isinstance(current, dict):
+                    raise TypeError("Open-Meteo air-quality response has no current values")
+                valid_time = _parse_iso(current.get("time"))
+                if not valid_time:
+                    raise TypeError("Open-Meteo air-quality response has no valid time")
+                data_times.append(valid_time)
+                pm25 = current.get("pm2_5")
+                if not isinstance(pm25, (int, float)) or isinstance(pm25, bool) or not math.isfinite(pm25) or pm25 < 0:
+                    continue
+                pm10 = current.get("pm10")
+                if not isinstance(pm10, (int, float)) or isinstance(pm10, bool) or not math.isfinite(pm10) or pm10 < 0:
+                    pm10 = None
+                half = AIR_QUALITY_GRID_STEP / 2
+                west, east = max(-180, longitude - half), min(180, longitude + half)
+                south, north = max(-85, latitude - half), min(85, latitude + half)
+                features.append({
+                    "type": "Feature",
+                    "id": f"cams-global:{latitude:g}:{longitude:g}",
+                    "geometry": {"type": "Polygon", "coordinates": [[[west, south], [east, south], [east, north], [west, north], [west, south]]]},
+                    "properties": {"pm2_5": float(pm25), "pm10": float(pm10) if pm10 is not None else None, "validTime": valid_time},
+                })
+        if not features:
+            raise TypeError("Open-Meteo returned no finite PM2.5 samples")
+        data_time = max(data_times, default=None)
+        envelope = cache.envelope(
+            source="open-meteo-cams-global",
+            kind="forecast",
+            data={"type": "FeatureCollection", "features": features, "gridSpacingDegrees": AIR_QUALITY_GRID_STEP, "modelResolutionKm": 45},
+            attribution="Open-Meteo · CAMS Global · CC BY 4.0",
+            documentation_url="https://open-meteo.com/en/docs/air-quality-api",
+            data_time=data_time,
+            valid_from=data_time,
+            units={"pm2_5": "μg/m³", "pm10": "μg/m³"},
+            ttl_seconds=12 * 60 * 60,
+        )
+        envelope["coverage"] = "Global · 12° sampled model overview"
+        return envelope
+
+    return await cache.get_or_fetch(key, fetch)
 
 
 async def _get_json(client: httpx.AsyncClient, url: str) -> Any:

@@ -9,6 +9,7 @@ export function activeLegendItems(layers,definitions){
     if(layer.id==='aurora')return [{...definition,id:layer.id,kind:'point',symbols:[{label:'≤50%',color:'#6cddb2'},{label:'>50%',color:'#b5a0dd'}]}];
     if(layer.id==='prop-muf')return [{...definition,id:layer.id,kind:'point',symbols:[{label:'Contours · MHz',color:definition.color,shape:'line'},{label:'Ionosonde',color:'#ffe28a',shape:'circle',radius:3.5}]}];
     if(layer.id==='weather-alerts')return [{...definition,id:layer.id,kind:'point',symbols:[['Extreme','#e45555'],['Severe','#f28a67'],['Moderate','#edc85b'],['Minor','#72bf8b']].map(([label,color])=>({label,color,radius:5}))}];
+    if(layer.id==='air-quality')return [{...definition,id:layer.id,kind:'point',symbols:[['<5','#68b7a3'],['5–<12','#b7bd68'],['12–<25','#e6b45f'],['25–<50','#e78959'],['≥50','#d96668']].map(([label,color])=>({label:`${label} μg/m³`,color,shape:'square'}))}];
     if(POINT_IDS.has(layer.id))return [{...definition,id:layer.id,kind:'point',symbols:[{label:'',color:definition.color}]}];
     if(RASTER_UNITS[layer.id])return [{...definition,id:layer.id,kind:'raster',unit:RASTER_UNITS[layer.id]}];
     return [];

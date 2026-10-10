@@ -32,3 +32,20 @@ test('active event polygons redraw in place and repeat across wrapped worlds',()
  alerts.update({type:'FeatureCollection',features:[{type:'Feature',id:'alert-1',properties:{event:'Tornado Warning',headline:'Tornado Warning for Test County',severity:'Extreme',urgency:'Immediate',certainty:'Observed',expires:'2026-10-09T17:00:00Z',web:'https://api.weather.gov/alerts/alert-1'},geometry:{type:'Polygon',coordinates:[[[1,2],[2,2],[2,1],[1,2]]]}}]});
  const alert=created.filter(layer=>layer.kind==='polygon').at(-1);assert.equal(alert.style.fillColor,'#e45555');alert.events.click();assert.equal(detail.title,'Tornado Warning for Test County');assert.equal(detail.fields[0][1],'Extreme');assert.equal(detail.fields.at(-1)[1].href,'https://api.weather.gov/alerts/alert-1');assert.equal(detail.source,'National Weather Service API');alerts.dispose();
 });
+
+test('CAMS air-quality cells use concentration colors and expose forecast values',()=>{
+ const created=[];
+ class Layer{constructor(kind,position,options={}){this.kind=kind;this.position=position;this.options=options;this.events={};created.push(this)}addTo(parent){parent.addLayer(this);return this}addLayer(l){this.children??=new Set();this.children.add(l);return this}removeLayer(l){this.children?.delete(l);return this}clearLayers(){this.children?.clear();return this}on(type,fn){this.events[type]=fn;return this}setLatLng(ll){this.position=ll;return this}getLatLng(){return this.position}setLatLngs(coords){this.coords=coords;return this}setStyle(style){this.style=style;return this}setRadius(){return this}}
+ const L={layerGroup:()=>new Layer('group'),polygon:(ll,o)=>new Layer('polygon',ll,o),GeoJSON:{coordsToLatLng:([lng,lat])=>({lat,lng}),coordsToLatLngs:(coords,depth)=>depth?coords.map(ring=>ring.map(([lng,lat])=>({lat,lng}))):coords.map(([lng,lat])=>({lat,lng}))}};
+ const map=new Layer('map');let detail;const resource=liveLayer(L,map,'air-quality','pane',value=>detail=value);
+ const ring=[[-6,-6],[6,-6],[6,6],[-6,6],[-6,-6]];
+ resource.update({type:'FeatureCollection',features:[{type:'Feature',id:'cell-1',properties:{pm2_5:31,pm10:42,validTime:'2026-10-10T12:00:00Z'},geometry:{type:'Polygon',coordinates:[ring]}}]});
+ const cell=created.find(layer=>layer.kind==='polygon');
+ assert.equal(cell.style.fillColor,'#e78959');
+ assert.equal(cell.style.opacity,.5);assert.equal(cell.style.fillOpacity,.45);
+ cell.events.click();
+ assert.equal(detail.kind,'CAMS global forecast cell');
+ assert.equal(detail.fields[0][1],'31.0 μg/m³');
+ assert.equal(detail.fields[1][1],'42.0 μg/m³');
+ resource.dispose();
+});

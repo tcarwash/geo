@@ -120,6 +120,7 @@ def layers() -> dict[str, Any]:
             {"id": "political-atlas", "name": "Political atlas", "kind": "base", "status": "available", "source": "Natural Earth"},
             {"id": "day-night", "name": "Day and night", "kind": "computed", "status": "available", "source": "Solar position calculation"},
             {"id": "maidenhead", "name": "Maidenhead grid", "kind": "computed", "status": "available", "source": "Amateur radio locator grid"},
+            {"id": "air-quality", "name": "Air quality · PM2.5", "kind": "forecast", "status": "available", "source": "Open-Meteo CAMS Global · 12° sampled overview · non-commercial free service", "endpoint": "/api/v1/air-quality"},
             {"id": "earthquakes", "name": "Earthquakes", "kind": "vector", "status": "available", "source": "USGS GeoJSON", "endpoint": "/api/v1/earthquakes"},
             {"id": "wildfires", "name": "Wildfires", "kind": "vector", "status": "available", "source": "NASA EONET", "endpoint": "/api/v1/natural-events/wildfires"},
             {"id": "volcanoes", "name": "Volcanic activity", "kind": "vector", "status": "available", "source": "NASA EONET", "endpoint": "/api/v1/natural-events/volcanoes"},
@@ -184,6 +185,15 @@ async def weather_alert_feed(request: Request) -> dict[str, Any]:
     except (httpx.HTTPError, TypeError, ValueError, json.JSONDecodeError):
         logger.warning("NWS active-alert feed unavailable", exc_info=True)
         raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "Active weather alerts are unavailable and no cached response exists."}) from None
+
+
+@app.get("/api/v1/air-quality", tags=["data"])
+async def air_quality_feed(request: Request) -> dict[str, Any]:
+    try:
+        return await sources.air_quality(request.app.state.http)
+    except (httpx.HTTPError, TypeError, ValueError, json.JSONDecodeError):
+        logger.warning("Open-Meteo CAMS air-quality feed unavailable", exc_info=True)
+        raise HTTPException(status_code=503, detail={"code": "source_unavailable", "message": "CAMS global air-quality data is unavailable and no cached response exists."}) from None
 
 
 @app.get("/api/v1/muf", tags=["data"])

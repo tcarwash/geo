@@ -5,12 +5,14 @@ const EVENT_COLORS={wildfires:'#ff8b61',volcanoes:'#c2a0ed',floods:'#6dbfe0','se
 const EVENT_NAMES={wildfires:'Wildfire',volcanoes:'Volcanic event',floods:'Flood event','severe-storms':'Severe storm','weather-alerts':'Weather alert'};
 const RADIO_COLORS={pskreporter:'#77d9c4',rbn:'#eed275','dx-cluster':'#c6a4ed',pota:'#a6d879',storms:'#ff886e','goes-track':'#9ad8ed'};
 const ZONE_COLORS={'cq-zones':'#64bdd0','itu-zones':'#d48cce'};
+const airQualityColor=value=>value<5?'#68b7a3':value<12?'#b7bd68':value<25?'#e6b45f':value<50?'#e78959':'#d96668';
 const textNode=value=>{const node=document.createElement('span');node.textContent=String(value);return node};
 const pointLabel=(id,p)=>p.label||p.activator||p.spotted||p.callsign||p.platform||p.name||p.place||p.headline||p.event||p.title||p.station||(['cq-zones','itu-zones'].includes(id)&&p.zoneNumber?`${id==='cq-zones'?'CQ':'ITU'} ${p.zoneNumber}`:null);
 export const glyphIcon=(L,kind)=>L.divIcon({className:`map-glyph glyph-${kind}`,html:glyphSVG(kind),iconSize:[44,44],iconAnchor:[22,22]});
 export function liveLayer(L,map,id,pane,onInspect){
  const group=L.layerGroup().addTo(map),features=new Map(),routes=L.layerGroup().addTo(group);let snapshot,labelsSnapshot;const animations=new Map();
  const inspect=layer=>{const f=layer.feature,p=f.properties||{};
+ if(id==='air-quality')onInspect({kind:'CAMS global forecast cell',title:'PM2.5 sample',fields:[['PM2.5',`${p.pm2_5.toFixed(1)} μg/m³`],['PM10',p.pm10==null?'Unavailable':`${p.pm10.toFixed(1)} μg/m³`],['Model valid',p.validTime||'Time unavailable'],['Sampling','12° global overview cell']],source:'Open-Meteo · Copernicus CAMS Global'});
  if(id==='earthquakes')onInspect({kind:'Earthquake',title:p.place||'Earthquake',fields:[['Magnitude',`M ${p.mag}`],['Depth',`${f.geometry.coordinates[2]} km`],['Observed',new Date(p.time).toUTCString()]],source:'U.S. Geological Survey'});
  if(id==='satellite')onInspect({kind:'Satellite model',title:p.name||'ISS',fields:[['Altitude',`${p.altitudeKm??'—'} km`],['Orbital epoch',p.epoch||'Unavailable'],['Position','Calculated with SGP4']],source:'CelesTrak'});
  if(id==='goes-track')onInspect({kind:'Weather satellite',title:p.platform||p.name,fields:[['Image center',`${f.geometry.coordinates[1].toFixed(2)}°, ${f.geometry.coordinates[0].toFixed(2)}°`],['Image product',p.imageProduct],['Position update',new Date(p.positionTime).toUTCString()],['Orbital elements',p.epoch||'Unavailable']],source:'CelesTrak TLE · NOAA GOES'});
@@ -39,13 +41,14 @@ export function liveLayer(L,map,id,pane,onInspect){
     }else if(g.type==='MultiLineString'||g.type==='LineString')layer=L.polyline([],{pane,color:RADIO_COLORS[id]||'#a4ccee',weight:1.7,dashArray:'5 6',interactive:['pskreporter','rbn','dx-cluster','pota','storms'].includes(id),pmIgnore:true});
     else if(g.type==='Polygon'||g.type==='MultiPolygon')layer=L.polygon([],{pane,interactive:true,pmIgnore:true});
     else return;
-    features.set(key,layer);layer.addTo(group);if((id!=='aurora'&&g.type==='Point'&&!p.zoneLabel)||EVENT_NAMES[id]||['pskreporter','rbn','dx-cluster','pota','storms','cq-zones','itu-zones'].includes(id))layer.on('click',()=>inspect(layer));
+    features.set(key,layer);layer.addTo(group);if((id!=='aurora'&&g.type==='Point'&&!p.zoneLabel)||EVENT_NAMES[id]||['air-quality','pskreporter','rbn','dx-cluster','pota','storms','cq-zones','itu-zones'].includes(id))layer.on('click',()=>inspect(layer));
    }
    layer.feature=f;
   if(g.type==='Point'){const target=L.GeoJSON.coordsToLatLng(g.coordinates),from=layer.getLatLng();if(id==='satellite'&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches&&Math.abs(target.lng-from.lng)<180){if(animations.has(key))cancelAnimationFrame(animations.get(key));const began=performance.now();const step=now=>{const t=Math.min(1,(now-began)/800),ease=t*t*(3-2*t);layer.setLatLng([from.lat+(target.lat-from.lat)*ease,from.lng+(target.lng-from.lng)*ease]);if(t<1)animations.set(key,requestAnimationFrame(step));else animations.delete(key)};animations.set(key,requestAnimationFrame(step));}else layer.setLatLng(target);}else{const depth=g.type==='LineString'?0:['MultiLineString','Polygon'].includes(g.type)?1:2;layer.setLatLngs(L.GeoJSON.coordsToLatLngs(g.coordinates,depth));}
    if(id==='earthquakes'){layer.setRadius(Math.max(3,Math.min(18,(p.mag||0)*2)));layer.setStyle({color:'#ffe2ac',weight:1,fillColor:'#e7a05f',fillOpacity:.65});}
    if(id==='aurora'){layer.setRadius(3);layer.setStyle({stroke:false,fillColor:p.probability>50?'#b5a0dd':'#6cddb2',fillOpacity:Math.max(.1,p.probability/100),interactive:false});}
    if(id==='contacts'){layer.setRadius(4);layer.setStyle({radius:4,color:'#e7d493',weight:1,fillColor:'#d2c085',fillOpacity:.65});}
+  if(id==='air-quality'&&g.type==='Polygon'){const color=airQualityColor(p.pm2_5);layer.setStyle({color,weight:.25,opacity:.5,fillColor:color,fillOpacity:.45});}
   if(['cq-zones','itu-zones'].includes(id)){const color=ZONE_COLORS[id];if(g.type==='Polygon'||g.type==='MultiPolygon')layer.setStyle({color,weight:.8,opacity:.8,fillColor:color,fillOpacity:.035});if(p.zoneLabel){layer.setRadius(1);layer.setStyle({color,weight:0,opacity:0,fillOpacity:0});}}
   if(g.type==='Point'&&!p.zoneLabel&&id==='pota'){layer.setRadius(5);layer.setStyle({color:RADIO_COLORS[id],weight:1.2,fillColor:RADIO_COLORS[id],fillOpacity:.8});}
   if(g.type==='Point'){
