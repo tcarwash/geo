@@ -9,7 +9,9 @@ test('distinguishes waiting, updating, current, and stale source states',()=>{
   assert.equal(sourceStatusLabel('earthquakes',{loading:true},age),'Updating');
   assert.equal(sourceStatusLabel('earthquakes',{status:'current',kind:'observation',dataTime:'10:00'},age),'Observed · age:10:00');
   assert.equal(sourceStatusLabel('muf',{status:'current',kind:'forecast',dataTime:'10:00'},age),'Forecast · age:10:00');
+  assert.equal(sourceStatusLabel('prop-muf',{status:'current',retrievedAt:'10:05'},age),'Available · age:10:05');
   assert.equal(sourceStatusLabel('earthquakes',{status:'stale',dataTime:'09:00'},age),'Stale · age:09:00');
+  assert.equal(sourceStatusLabel('prop-muf',{status:'stale',retrievedAt:'09:00'},age),'Stale · age:09:00');
   assert.equal(sourceStatusLabel('earthquakes',{staleReason:'upstream timeout',dataTime:'09:00'},age),'Stale · age:09:00');
   assert.equal(sourceStatusLabel('earthquakes',{status:'unavailable',error:'upstream timeout',dataTime:'09:00'},age),'Stale · age:09:00');
 });

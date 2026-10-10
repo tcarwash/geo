@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {activeLegendItems} from '../src/legendModel.js';
 
-const defs=[{id:'earthquakes',name:'Earthquakes',color:'#edaa69'},{id:'aurora',name:'Aurora forecast',color:'#78cfab'},{id:'weather-alerts',name:'Active weather alerts',color:'#f28a67'},{id:'precipitation',name:'Precipitation rate',color:'#66b9e8'},{id:'muf',name:'Maximum usable frequency',color:'#ef70d5'}];
+const defs=[{id:'earthquakes',name:'Earthquakes',color:'#edaa69'},{id:'aurora',name:'Aurora forecast',color:'#78cfab'},{id:'weather-alerts',name:'Active weather alerts',color:'#f28a67'},{id:'precipitation',name:'Precipitation rate',color:'#66b9e8'},{id:'muf',name:'Maximum usable frequency',color:'#ef70d5'},{id:'prop-muf',name:'prop.kc2g.com MUF (3000 km)',color:'#b0e1b5'}];
 
 test('shows active point layers with the actual graduated symbols or categories',()=>{
   const items=activeLegendItems([{id:'earthquakes',on:true},{id:'aurora',on:true}],defs);
@@ -14,6 +14,12 @@ test('includes only active rasters whose displayed product units are documented'
   const items=activeLegendItems([{id:'precipitation',on:true},{id:'muf',on:true},{id:'imagery',on:true},{id:'aurora',on:false}],defs);
   assert.deepEqual(items.filter(x=>x.kind==='raster').map(x=>[x.id,x.unit]),[['precipitation','mm/h'],['muf','MHz']]);
   assert.deepEqual(items.map(x=>x.id),['precipitation','muf']);
+});
+
+test('represents prop MUF as contour lines and station points, not a raster gradient',()=>{
+  const item=activeLegendItems([{id:'prop-muf',on:true}],defs)[0];
+  assert.equal(item.kind,'point');
+  assert.deepEqual(item.symbols.map(({label,shape})=>[label,shape]),[['Contours · MHz','line'],['Ionosonde','circle']]);
 });
 
 test('includes enabled active weather alerts in the map legend',()=>{

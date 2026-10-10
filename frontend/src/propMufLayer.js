@@ -1,45 +1,63 @@
-import {WORLD_OFFSETS} from './worldCopies.js';
-import {mufSourceRow} from './mufLayer.js';
+import {WORLD_OFFSETS,worldCopies} from './worldCopies.js';
 
-const URL='/prop/renders/current/mufd-normal-now.svg';
-const BOUNDS=[[-85.05112878,-180],[85.05112878,180]];
-const PLACEHOLDER='data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+const CONTOUR_URL='/prop/renders/current/mufd-normal-now.geojson';
+const STATION_URL='/prop/api/stations.json';
+const REFRESH_MS=15*60*1000;
+const finite=value=>value!==null&&value!==undefined&&value!==''&&Number.isFinite(Number(value))?Number(value):undefined;
+const text=value=>{const node=document.createElement('span');node.textContent=value;return node;};
 
-export function enhanceMufPixels(data){
- for(let i=0;i<data.length;i+=4){
-  const r=data[i],g=data[i+1],b=data[i+2];
-  if(r>248&&g>248&&b>248){data[i+3]=0;continue;}
-  const luminance=.2126*r+.7152*g+.0722*b;
-  for(let channel=0;channel<3;channel++)data[i+channel]=Math.max(0,Math.min(255,Math.round(luminance+(data[i+channel]-luminance)*1.65)));
- }
- return data;
+export function propMufContourLabel(feature){
+ const value=finite(feature?.properties?.['level-value']);
+ if(value!==undefined)return `${value} MHz`;
+ const title=String(feature?.properties?.title||'').trim();
+ return title?(/\bMHz$/i.test(title)?title:`${title} MHz`):'';
+}
+
+export function propMufContours(collection){
+ if(collection?.type!=='FeatureCollection'||!Array.isArray(collection.features))throw new Error('prop.kc2g.com returned an invalid contour collection.');
+ const features=collection.features.filter(feature=>feature?.type==='Feature'&&feature.geometry?.type==='LineString'&&Array.isArray(feature.geometry.coordinates)&&feature.geometry.coordinates.length>=2&&feature.geometry.coordinates.every(point=>Array.isArray(point)&&point.length>=2&&Number.isFinite(point[0])&&Number.isFinite(point[1])));
+ if(!features.length)throw new Error('prop.kc2g.com returned no renderable contour features.');
+ return worldCopies({type:'FeatureCollection',features});
+}
+
+export function propMufStations(records){
+ if(!Array.isArray(records))throw new Error('prop.kc2g.com returned an invalid station list.');
+ const features=records.flatMap(record=>{
+  const latitude=finite(record?.station?.latitude),longitude=finite(record?.station?.longitude);
+  if(latitude===undefined||longitude===undefined||latitude < -90||latitude > 90)return [];
+  const point={type:'Feature',geometry:{type:'Point',coordinates:[((longitude+180)%360+360)%360-180,latitude]},properties:{name:String(record.station.name||record.station.code||'Ionosonde'),code:record.station.code,source:record.source,time:record.time,mufd:finite(record.mufd),fof2:finite(record.fof2),confidence:finite(record.cs)}};
+  return [point];
+ });
+ return worldCopies({type:'FeatureCollection',features});
 }
 
 export function propMufLayer(L,map,pane,onStatus){
  const group=L.layerGroup().addTo(map);
- const overlays=WORLD_OFFSETS.map(offset=>L.imageOverlay(PLACEHOLDER,[[BOUNDS[0][0],BOUNDS[0][1]+offset],[BOUNDS[1][0],BOUNDS[1][1]+offset]],{pane,interactive:false,pmIgnore:true,attribution:'prop.kc2g.com · MUF(3000 km)'}).addTo(group));
- let disposed=false,timer;
- const load=()=>{
-  onStatus?.({status:'loading',loading:true});
-  const image=new Image();
-  image.onload=()=>{
+ let disposed=false,timer,controller,hasData=false,lastRetrievedAt;
+ const load=async()=>{
+  if(disposed||controller)return;
+  controller=new AbortController();
+  onStatus?.({status:'loading',loading:true,...(lastRetrievedAt?{retrievedAt:lastRetrievedAt}:{})});
+  try{
+   const [contourResponse,stationResponse]=await Promise.all([
+    fetch(CONTOUR_URL,{signal:controller.signal}),
+    fetch(STATION_URL,{signal:controller.signal}),
+   ]);
+   if(!contourResponse.ok||!stationResponse.ok)throw new Error('prop.kc2g.com data is temporarily unavailable.');
+   const [contourData,stationData]=await Promise.all([contourResponse.json(),stationResponse.json()]);
+   const contours=propMufContours(contourData),stations=propMufStations(stationData);
    if(disposed)return;
-   try{
-    const width=image.naturalWidth,height=image.naturalHeight;
-    if(width<1000||height<600)throw new Error('prop.kc2g.com MUF image has an unexpected size.');
-    const sx=width*35.305/1144.848,sy=height*24.142/678.886,sw=width*1092.8/1144.848,sh=height*546.4/678.886;
-    const size=1024,canvas=document.createElement('canvas');canvas.width=size;canvas.height=size;
-    const context=canvas.getContext('2d',{willReadFrequently:true});
-    for(let y=0;y<size;y++)context.drawImage(image,sx,sy+mufSourceRow(y,size)/size*sh,sw,1,0,y,size,1);
-    const pixels=context.getImageData(0,0,size,size);enhanceMufPixels(pixels.data);
-    context.putImageData(pixels,0,0);
-    const url=canvas.toDataURL('image/png');overlays.forEach(overlay=>overlay.setUrl(url));
-    onStatus?.({status:'current',loading:false,retrievedAt:new Date().toISOString(),source:'prop.kc2g.com'});
-   }catch(error){onStatus?.({status:'unavailable',loading:false,error:error.message});}
-  };
-  image.onerror=()=>{if(!disposed)onStatus?.({status:'unavailable',loading:false,error:'The prop.kc2g.com MUF image could not be loaded.'});};
-  image.src=URL;
+   group.clearLayers();
+   const attribution='<a href="https://prop.kc2g.com/about/" target="_blank" rel="noreferrer">prop.kc2g.com</a> · MUF(3000 km)';
+   L.geoJSON(contours,{pane,pmIgnore:true,attribution,style:feature=>({color:/^#[\da-f]{6}$/i.test(feature.properties?.stroke||'')?feature.properties.stroke:'#f1cf78',weight:Math.max(1,finite(feature.properties?.['stroke-width'])||1),opacity:.95}),onEachFeature:(feature,layer)=>{const label=propMufContourLabel(feature);if(label)layer.bindTooltip(text(label),{permanent:true,direction:'center',className:'prop-muf-contour-label',opacity:1,interactive:false});}}).addTo(group);
+   L.geoJSON(stations,{pane,pmIgnore:true,attribution,pointToLayer:(feature,latlng)=>L.circleMarker(latlng,{pane,radius:3.5,color:'#17303c',weight:1,fillColor:'#ffe28a',fillOpacity:.95}),onEachFeature:(feature,layer)=>{const p=feature.properties;layer.bindTooltip(text(`${p.name}${Number.isFinite(p.mufd)?` · ${p.mufd} MHz`:''}`));}}).addTo(group);
+   hasData=true;lastRetrievedAt=new Date().toISOString();
+   onStatus?.({status:'current',loading:false,retrievedAt:lastRetrievedAt,source:'prop.kc2g.com',contourCount:contours.features.length/WORLD_OFFSETS.length,stationCount:stations.features.length/WORLD_OFFSETS.length});
+  }catch(error){
+   if(disposed||error.name==='AbortError')return;
+   onStatus?.({status:hasData?'stale':'unavailable',loading:false,...(lastRetrievedAt?{retrievedAt:lastRetrievedAt}:{}),error:error.message||'prop.kc2g.com data could not be loaded.'});
+  }finally{controller=null;}
  };
- load();timer=setInterval(load,300000);
- return {update(){},dispose(){disposed=true;clearInterval(timer);group.clearLayers();map.removeLayer(group)}};
+ load();timer=setInterval(load,REFRESH_MS);
+ return {update(){},dispose(){disposed=true;clearInterval(timer);controller?.abort();group.clearLayers();map.removeLayer(group)}};
 }

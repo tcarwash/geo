@@ -3,7 +3,7 @@ import {worldCopies} from './worldCopies.js';
 import {contrastInfraredPixels} from './infraredContrast.js';
 const text=s=>{const n=document.createElement('span');n.textContent=s;return n};
 function cloudLayer(definition,options,pane){
- const layer=L.tileLayer.wms(definition.url,{...options,pane,attribution:text(definition.attribution||options.attribution).innerHTML,layers:definition.wmsLayers,...(definition.wmsTime?{time:definition.wmsTime}:{}),format:'image/png',transparent:true,version:'1.1.1',maxZoom:8});
+ const layer=L.tileLayer.wms(definition.url,{...options,pane,attribution:text(definition.attribution||options.attribution).innerHTML,layers:definition.wmsLayers,...(definition.wmsTime?{time:definition.wmsTime}:{}),...(definition.crs?{crs:definition.crs}:{}),format:'image/png',transparent:true,version:'1.1.1',maxZoom:8});
  const getTileUrl=layer.getTileUrl.bind(layer);layer.getTileUrl=coords=>getTileUrl(coords).replace(/(format=)image%2fpng/i,'$1image/png');
  layer.options.crossOrigin='anonymous';
  layer.createTile=(coords,done)=>{
@@ -33,7 +33,7 @@ export function attachCustomLayer(map,definition,pane,onStatus){
  if(definition.kind==='geojson'){
   layer=L.geoJSON(worldCopies(definition.data),{...options,style:{color:definition.color,weight:1.5,fillOpacity:.15},pointToLayer:(f,ll)=>L.circleMarker(ll,{...options,radius:4,color:definition.color}),onEachFeature:(f,l)=>l.bindTooltip(text(f.properties?.name||definition.name))});
  }else if(definition.kind==='wms'||definition.kind==='cloud-wms'||definition.kind==='contrast-wms'){
-  layer=L.tileLayer.wms(definition.url,{...options,layers:definition.wmsLayers,...(definition.wmsTime?{time:definition.wmsTime}:{}),format:'image/png',transparent:true,version:'1.1.1',maxZoom:8});
+  layer=L.tileLayer.wms(definition.url,{...options,layers:definition.wmsLayers,...(definition.wmsTime?{time:definition.wmsTime}:{}),...(definition.crs?{crs:definition.crs}:{}),format:'image/png',transparent:true,version:'1.1.1',maxZoom:8});
   if(definition.kind==='cloud-wms'){
    return attachCloudSources(map,[definition],options,onStatus);
   }

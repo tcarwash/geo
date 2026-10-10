@@ -1,6 +1,10 @@
 # Geo
 
-Geo is a self-hosted, large-display world map and clock project. Its implementation plan is in [PROJECT_SPEC.md](PROJECT_SPEC.md), its source inventory and display rules are in [data.md](data.md), and visual direction is in [STYLE_GUIDE.md](STYLE_GUIDE.md).
+Geo is a self-hosted, large-display living atlas: a world map, UTC clock, live geospatial layers, and configurable instruments in one map-first interface.
+
+![Geo living atlas example](example.png)
+
+Product direction and implementation details: [project specification](PROJECT_SPEC.md), [data sources](data.md), [visual style guide](STYLE_GUIDE.md), and [capability status](CAPABILITIES.md).
 
 ## Current implementation
 
@@ -21,7 +25,7 @@ Run `cd frontend && npm ci && npm run dev`, then open http://localhost:5173. Vit
 
 Current view autosaves in browser storage. Named layouts save to SQLite with revision conflict detection and include annotations and widget positions. Settings accepts an optional edit token kept in session memory. Escape closes panels and cancels drawing. Solar simulation changes shading only. Iframe destinations must permit embedding.
 
-A space-weather widget displays NOAA SWPC Kp observations with timestamps and source status. World clocks and clock widgets offer timezone controls. Widgets support arrow-key movement and Shift+arrow resizing; mobile uses a scrollable stack. Imported layout values are normalized before rendering. Browser visual and interaction verification remains pending. NASA MODIS Terra true-color imagery is available as a dated overlay; it is not instantaneous cloud cover.
+A space-weather widget displays NOAA SWPC Kp observations with timestamps and source status. World clocks and clock widgets offer timezone controls. Widgets support arrow-key movement and Shift+arrow resizing; mobile uses a scrollable stack. Imported layout values are normalized before rendering. Browser smoke checks cover desktop/touch layer-browser flows and source-layer rendering; physical-device and long-duration display testing remain outstanding. NASA MODIS Terra true-color imagery is available as a dated overlay; it is not instantaneous cloud cover.
 
 `geo.ag7su.com` is explicitly allowed by Vite development and preview servers. `https://geo.ag7su.com` is included in the API CORS configuration. The production Nginx frontend accepts this Host header and proxies API requests on the same origin. Apply changed API environment settings on the next container recreation. DNS, TLS, and HAProxy routing remain host configuration.
 

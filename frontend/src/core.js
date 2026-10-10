@@ -37,7 +37,7 @@ export const LAYERS = [
  {id:'maidenhead',name:'Maidenhead grid',subtitle:'Amateur radio · reference',icon:'Radio',color:'#c8a8d7',on:false,opacity:.5},
  {id:'contacts',name:'My radio contacts',subtitle:'Your imported ADIF log',icon:'Route',color:'#d7c58b',on:false,opacity:.8},
  {id:'muf',name:'Maximum usable frequency',subtitle:'NOAA WAM-IPE · global forecast',icon:'Waves',color:'#ef70d5',on:false,opacity:.7},
- {id:'prop-muf',name:'prop.kc2g.com MUF (3000 km)',subtitle:'Live ionosonde-derived map · vivid color scale',icon:'Waves',color:'#b0e1b5',on:false,opacity:.9},
+ {id:'prop-muf',name:'prop.kc2g.com MUF (3000 km)',subtitle:'Live ionosonde readings + geographic contours',icon:'Waves',color:'#b0e1b5',on:false,opacity:.9},
  {id:'satellite-weather',name:'Satellite weather',subtitle:'GOES-East/West · GeoColor',icon:'CloudSun',color:'#92d8ee',on:false,opacity:.8},
  {id:'clouds',name:'Satellite clouds (white)',subtitle:'GOES + Himawari · infrared, refreshed every 10 min',icon:'CloudSun',color:'#d8e5ec',on:false,opacity:.72},
  {id:'eumetsat-clouds',name:'Global cloud composite',subtitle:'EUMETSAT geostationary ring · infrared, refreshed every 3 hr',icon:'CloudSun',color:'#c6d4da',on:false,opacity:.72},
