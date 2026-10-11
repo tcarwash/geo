@@ -12,7 +12,7 @@ import cqZones from './data/cqzones.json';
 import ituZones from './data/ituzones.json';
 import {BASE_MAPS,baseMapController} from './baseMaps';
 import {WORLD_OFFSETS,worldCopies} from './worldCopies';
-import {chronGeometry,clampChronCenterY} from './chronGeometry.js';
+import {chronGeometry,clampChronCenterY,minimumVerticalMapZoom,chronZoomForWidth} from './chronGeometry.js';
 import '@geoman-io/leaflet-geoman-free';
 import marker from 'leaflet/dist/images/marker-icon.png';
 import shadow from 'leaflet/dist/images/marker-shadow.png';
@@ -50,7 +50,7 @@ export default forwardRef(function MapView({state,feeds,time,locked,chronMode=fa
  m.createPane('base-raster').style.zIndex=220;m.createPane('countries').style.zIndex=250;m.createPane('night').style.zIndex=350;m.createPane('labels').style.zIndex=450;m.getPane('labels').style.pointerEvents='none';m.createPane('drawings').style.zIndex=680;m.createPane('locations').style.zIndex=650;
  L.control.attribution({position:'bottomright',prefix:false}).addAttribution('<a href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noreferrer">Natural Earth 5.1.2</a> · <a href="https://leafletjs.com" target="_blank" rel="noreferrer">Leaflet</a>').addTo(m);
  drawingGroup.current=L.featureGroup().addTo(m);drawingCopies.current=L.layerGroup().addTo(m);
- m.on('moveend',()=>{if(!chronActive.current)callbacks.current.onMove?.({center:[m.getCenter().lat,m.getCenter().lng],zoom:m.getZoom()})});
+ m.on('moveend',()=>{if(!chronActive.current){const zoom=m.getZoom(),world=m.getPixelWorldBounds(zoom),center=m.project(m.getCenter(),zoom),size=m.getSize(),centerY=clampChronCenterY(center.y,world.min.y,world.max.y,size.y);if(Math.abs(centerY-center.y)>.01){m.setView(m.unproject([center.x,centerY],zoom),zoom,{animate:false});return;}callbacks.current.onMove?.({center:[m.getCenter().lat,m.getCenter().lng],zoom})}});
  m.on('mousemove click',e=>callbacks.current.onCoordinate?.({...e.latlng,grid:locator(e.latlng.lat,e.latlng.lng)}));
  const saveDrawings=()=>{const c=drawingGroup.current.toGeoJSON();drawingGroup.current.eachLayer(l=>{if(l instanceof L.Circle){const f=c.features.find(f=>f.properties?.id===l.feature?.properties?.id);if(f)f.properties.radius=l.getRadius();}});drawingSnapshot.current=JSON.stringify(c);callbacks.current.onDrawings?.(c);};
  saveCurrentDrawings.current=saveDrawings;
@@ -67,9 +67,26 @@ export default forwardRef(function MapView({state,feeds,time,locked,chronMode=fa
  },[]);
  useEffect(()=>{const m=map.current;if(!m)return;
   const setInteractions=enabled=>['dragging','scrollWheelZoom','doubleClickZoom','touchZoom','boxZoom','keyboard','tap'].forEach(name=>{const handler=m[name];if(handler?.[enabled?'enable':'disable'])handler[enabled?'enable':'disable']()});
-  if(chronMode){priorView.current={center:[m.getCenter().lat,m.getCenter().lng],zoom:m.getZoom()};setInteractions(false);let firstAlign=true;const align=()=>{const width=Math.max(256,m.getSize().x),zoom=Math.max(.25,Math.min(8,Math.log2(width/256))),latitude=firstAlign?0:m.getCenter().lat;firstAlign=false;m.setView([latitude,sunPosition(currentTime.current).lng],zoom,{animate:false})};align();window.addEventListener('resize',align);return()=>window.removeEventListener('resize',align)}
-  setInteractions(true);if(priorView.current){m.setView(priorView.current.center,priorView.current.zoom,{animate:false});priorView.current=null;}
- },[chronMode]);
+  if(chronMode){priorView.current={center:[m.getCenter().lat,m.getCenter().lng],zoom:m.getZoom()};m.setMinZoom(.25);setInteractions(false);}
+  else{setInteractions(true);m.setMinZoom(Math.min(8,minimumVerticalMapZoom(m.getSize().y)));if(priorView.current){m.setView(priorView.current.center,priorView.current.zoom,{animate:false});priorView.current=null;}}
+  },[chronMode]);
+  useEffect(()=>{
+   const m=map.current,container=element.current;if(!m||!container)return;
+   let frame=0,firstChronAlign=chronMode;
+   const resize=()=>{
+    cancelAnimationFrame(frame);
+    frame=requestAnimationFrame(()=>{
+     m.invalidateSize({pan:false,debounceMoveend:true});
+     const size=m.getSize();
+     if(chronMode){const zoom=chronZoomForWidth(size.x),latitude=firstChronAlign?0:m.getCenter().lat;firstChronAlign=false;m.setView([latitude,sunPosition(currentTime.current).lng],zoom,{animate:false});return;}
+     const minZoom=Math.min(8,minimumVerticalMapZoom(size.y));m.setMinZoom(minZoom);
+     const zoom=Math.max(m.getZoom(),minZoom),world=m.getPixelWorldBounds(zoom),center=m.project(m.getCenter(),zoom),centerY=clampChronCenterY(center.y,world.min.y,world.max.y,size.y);
+     if(zoom!==m.getZoom()||Math.abs(centerY-center.y)>.01)m.setView(m.unproject([center.x,centerY],zoom),zoom,{animate:false});
+    });
+   };
+   const observer=new ResizeObserver(resize);observer.observe(container);resize();
+   return()=>{observer.disconnect();cancelAnimationFrame(frame)};
+  },[chronMode]);
  useEffect(()=>{if(!chronMode||!map.current)return;const sun=sunPosition(time);const m=map.current;m.setView([m.getCenter().lat,sun.lng],m.getZoom(),{animate:false});},[chronMode,time]);
  useEffect(()=>{
   const m=map.current;if(!chronMode||!m)return;

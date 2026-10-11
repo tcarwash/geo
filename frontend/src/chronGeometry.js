@@ -24,6 +24,15 @@ export function clampChronCenterY(centerY,worldTop,worldBottom,viewportHeight){
  return clamp(centerY,worldTop+margin,worldBottom-margin);
 }
 
+export function minimumVerticalMapZoom(height,tileSize=256){
+ return Math.max(.25,Math.log2(Math.max(1,height)/tileSize));
+}
+
+export function chronZoomForWidth(width,tileSize=256){
+ const zoom=Math.ceil(Math.log2(Math.max(tileSize,width)/tileSize)*10-1e-10)/10;
+ return Math.max(.25,Math.min(8,zoom));
+}
+
 const mercatorLatitude=y=>Math.atan(Math.sinh(Math.PI*(1-2*y)))/RAD;
 const point=(x,y)=>`${x.toFixed(2)} ${y.toFixed(2)}`;
 const strip=(x0a,x0b,x1b,x1a,y0,y1)=>`M ${point(x0a,y0)} L ${point(x0b,y0)} L ${point(x1b,y1)} L ${point(x1a,y1)} Z`;

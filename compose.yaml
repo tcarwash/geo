@@ -10,6 +10,7 @@ services:
       retries: 10
 
   geo-web:
+    image: ghcr.io/tcarwash/geo-frontend
     build: ./frontend
     restart: unless-stopped
     ports:
@@ -19,6 +20,7 @@ services:
         condition: service_healthy
 
   geo-api:
+    image: ghcr.io/tcarwash/geo-backend
     build:
       context: ./backend
     restart: unless-stopped

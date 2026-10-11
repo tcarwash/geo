@@ -21,6 +21,26 @@ test('seasonal declination bends the terminator and grayline expands beyond dayl
   assert.ok(geometry.grayline.length>geometry.night.length/10);
 });
 
+test('minimum normal-map zoom keeps the projected world at least as tall as the map',()=>{
+  const minimumZoom=chronGeometryHelpers.minimumVerticalMapZoom;
+  assert.equal(typeof minimumZoom,'function');
+  for(const height of [300,844,900,2160]){
+    const zoom=minimumZoom(height);
+    assert.ok(256*2**zoom>=height,'zooming out must not shrink the projected world below the map height');
+    assert.ok(256*2**(zoom-.1)<height,'the next zoom step out must exceed the vertical map extent');
+  }
+});
+
+test('Chron zoom rounds up enough to cover the viewport horizontally',()=>{
+  const zoomForWidth=chronGeometryHelpers.chronZoomForWidth;
+  assert.equal(typeof zoomForWidth,'function');
+  for(const width of [390,1440,1920]){
+    const zoom=zoomForWidth(width);
+    assert.ok(256*2**zoom>=width,'the geographic overlay must cover both horizontal viewport edges');
+    assert.ok(256*2**(zoom-.1)<width,'choose only the smallest supported zoom that covers the width');
+  }
+});
+
 test('Chron vertical panning clamps to projected world bounds',()=>{
   assert.equal(typeof chronGeometryHelpers.clampChronCenterY,'function');
   const clamp=chronGeometryHelpers.clampChronCenterY;
