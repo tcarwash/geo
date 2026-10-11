@@ -28,10 +28,10 @@ const RADIO_ZONE_DATA={'cq-zones':zoneFeatures(cqZones,'cq'),'itu-zones':zoneFea
 function paintNight(tile,coords,time){const ctx=tile.getContext('2d');ctx.clearRect(0,0,256,256);const sun=sunPosition(time),sLat=sun.lat*RAD,size=256*Math.pow(2,coords.z);
  for(let y=0;y<256;y+=4){const py=(coords.y*256+y+2)/size,lat=Math.atan(Math.sinh(Math.PI*(1-2*py)));for(let x=0;x<256;x+=4){const lng=((coords.x*256+x+2)/size*360-180)*RAD,alt=Math.asin(Math.sin(lat)*Math.sin(sLat)+Math.cos(lat)*Math.cos(sLat)*Math.cos(lng-sun.lng*RAD))/RAD;if(alt<0){ctx.fillStyle=alt>-6?`rgba(51,41,68,${.18+(-alt/6)*.3})`:alt>-18?`rgba(10,20,43,${.48+(-alt-6)/12*.3})`:'rgba(5,17,34,.84)';ctx.fillRect(x,y,4,4);}}}}
 const NightLayer=L.GridLayer.extend({createTile(coords){const tile=L.DomUtil.create('canvas');tile.width=tile.height=256;paintNight(tile,coords,this.options.time);return tile;},setTime(time){this.options.time=time;Object.values(this._tiles||{}).forEach(tile=>paintNight(tile.el,tile.coords,time));}});
-export default forwardRef(function MapView({state,feeds,time,locked,chronMode=false,onMove,onInspect,onCoordinate,onCountries,drawings,onDrawings,onReady,onError,onSourceStatus},ref){
+export default forwardRef(function MapView({state,feeds,time,locked,chronMode=false,onMove,onInspect,onCoordinate,onCountries,drawings,onDrawings,onReady,onError,onSourceStatus,onChronPan},ref){
  const element=useRef(), map=useRef(),base=useRef(),names=useRef(),night=useRef(),overlays=useRef({}),drawingGroup=useRef(),drawingCopies=useRef(),callbacks=useRef({}),drawingSnapshot=useRef(),saveCurrentDrawings=useRef(),stationMarker=useRef([]),sunMarker=useRef([]),liveResources=useRef(new Map()),tileResources=useRef(new Map()),baseController=useRef(),chronActive=useRef(false),priorView=useRef(null),currentTime=useRef(time);
  chronActive.current=chronMode;currentTime.current=time;
- callbacks.current={onMove,onInspect,onCoordinate,onCountries,onDrawings,onSourceStatus,station:state.station};
+ callbacks.current={onMove,onInspect,onCoordinate,onCountries,onDrawings,onSourceStatus,onChronPan,station:state.station};
  useImperativeHandle(ref,()=>({
   home(){map.current?.fitBounds([[-58,-176],[78,180]],{padding:window.innerWidth<600?[20,140]:[35,95]});},zoom(v){map.current?.setZoom(map.current.getZoom()+v);},
   fly(lat,lng){map.current?.flyTo([lat,lng],Math.max(map.current.getZoom(),4));},
@@ -48,6 +48,7 @@ export default forwardRef(function MapView({state,feeds,time,locked,chronMode=fa
  m.createPane('base-raster').style.zIndex=220;m.createPane('countries').style.zIndex=250;m.createPane('night').style.zIndex=350;m.createPane('labels').style.zIndex=450;m.getPane('labels').style.pointerEvents='none';m.createPane('drawings').style.zIndex=680;m.createPane('locations').style.zIndex=650;
  L.control.attribution({position:'bottomright',prefix:false}).addAttribution('<a href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noreferrer">Natural Earth 5.1.2</a> · <a href="https://leafletjs.com" target="_blank" rel="noreferrer">Leaflet</a>').addTo(m);
  drawingGroup.current=L.featureGroup().addTo(m);drawingCopies.current=L.layerGroup().addTo(m);
+ m.on('move',()=>{if(chronActive.current){const center=m.getCenter(),equatorY=m.latLngToContainerPoint([0,center.lng]).y;callbacks.current.onChronPan?.(equatorY-m.getSize().y/2);}});
  m.on('moveend',()=>{if(!chronActive.current)callbacks.current.onMove?.({center:[m.getCenter().lat,m.getCenter().lng],zoom:m.getZoom()})});
  m.on('mousemove click',e=>callbacks.current.onCoordinate?.({...e.latlng,grid:locator(e.latlng.lat,e.latlng.lng)}));
  const saveDrawings=()=>{const c=drawingGroup.current.toGeoJSON();drawingGroup.current.eachLayer(l=>{if(l instanceof L.Circle){const f=c.features.find(f=>f.properties?.id===l.feature?.properties?.id);if(f)f.properties.radius=l.getRadius();}});drawingSnapshot.current=JSON.stringify(c);callbacks.current.onDrawings?.(c);};

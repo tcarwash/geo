@@ -82,9 +82,12 @@ try{
   assert((await page.locator('.chron-overlay .chron-night').getAttribute('d'))?.length>0);
   assert.equal(await page.getByRole('button',{name:'Exit Chron',exact:true}).count(),1);
   const beforePan=await labelPosition(page);
+  const overlayBeforePan=await page.locator('.chron-overlay').boundingBox();
   await page.mouse.move(width/2,height/2);await page.mouse.down();await page.mouse.move(width/2,height/2+70,{steps:4});await page.mouse.up();
   const afterVerticalPan=await labelPosition(page);
+  const overlayAfterPan=await page.locator('.chron-overlay').boundingBox();
   assert(afterVerticalPan.y>beforePan.y+30,'dragging vertically moves the map north/south');
+  assert(Math.abs((overlayAfterPan.y-overlayBeforePan.y)-(afterVerticalPan.y-beforePan.y))<2,'the day/night and grayline overlay follows the map when panning vertically');
   assert(Math.abs(afterVerticalPan.x-beforePan.x)<4,'vertical dragging does not shift solar longitude');
   await page.mouse.move(width/2,height/2);await page.mouse.down();await page.mouse.move(width/2+70,height/2,{steps:4});await page.mouse.up();
   const afterHorizontalDrag=await labelPosition(page);
