@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {chronGeometry,clockTimeScaleShift,solarHourAngle} from '../src/chronGeometry.js';
+import * as chronGeometryHelpers from '../src/chronGeometry.js';
+const {chronGeometry,clockTimeScaleShift,solarHourAngle}=chronGeometryHelpers;
 import {sunPosition} from '../src/core.js';
 
 test('equinox chron geometry centers noon with vertical day-night edges',()=>{
@@ -18,6 +19,16 @@ test('seasonal declination bends the terminator and grayline expands beyond dayl
   const geometry=chronGeometry(23.4,1440,900);
   assert.ok(geometry.night.split('L').length>20);
   assert.ok(geometry.grayline.length>geometry.night.length/10);
+});
+
+test('Chron vertical panning clamps to projected world bounds',()=>{
+  assert.equal(typeof chronGeometryHelpers.clampChronCenterY,'function');
+  const clamp=chronGeometryHelpers.clampChronCenterY;
+  assert.equal(clamp(0,0,1440,900),450,'wide maps cannot pan far enough to expose space beyond either pole');
+  assert.equal(clamp(700,0,1440,900),700,'centers within the allowed range remain unchanged');
+  assert.equal(clamp(1440,0,1440,900),990,'wide maps stop with both projected poles still covering the viewport');
+  assert.equal(clamp(-20,0,390,844),0,'a tall viewport cannot pan the whole projected world beyond its north edge');
+  assert.equal(clamp(410,0,390,844),390,'a tall viewport cannot pan the whole projected world beyond its south edge');
 });
 
 test('chron geometry stays finite and covers polar-day and polar-night rows',()=>{

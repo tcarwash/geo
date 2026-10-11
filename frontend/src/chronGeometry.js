@@ -19,6 +19,11 @@ export function solarHourAngle(latitude,declination,altitude=0){
  return cosine<=-1?180:cosine>=1?0:Math.acos(cosine)/RAD;
 }
 
+export function clampChronCenterY(centerY,worldTop,worldBottom,viewportHeight){
+ const worldHeight=worldBottom-worldTop,margin=worldHeight>=viewportHeight?viewportHeight/2:0;
+ return clamp(centerY,worldTop+margin,worldBottom-margin);
+}
+
 const mercatorLatitude=y=>Math.atan(Math.sinh(Math.PI*(1-2*y)))/RAD;
 const point=(x,y)=>`${x.toFixed(2)} ${y.toFixed(2)}`;
 const strip=(x0a,x0b,x1b,x1a,y0,y1)=>`M ${point(x0a,y0)} L ${point(x0b,y0)} L ${point(x1b,y1)} L ${point(x1a,y1)} Z`;
