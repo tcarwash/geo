@@ -13,6 +13,30 @@ from typing import Any
 
 logger = logging.getLogger("geo.feed_stream")
 PUBLIC_FEED_ROUTES = {
+    **{
+        layer: f"/api/v1/environment/{layer}"
+        for layer in (
+            "night-lights",
+            "surface-wind",
+            "pressure",
+            "sea-temperature",
+            "ocean-currents",
+            "waves",
+            "vessel-density-global",
+            "vessel-density",
+            "glotec",
+            "submarine-cables",
+            "vegetation",
+            "smoke-aerosols",
+        )
+    },
+    **{
+        layer: f"/api/v1/atlas/{layer}"
+        for layer in ("airports", "ports", "rivers", "lakes", "bathymetry", "tectonic-plates")
+    },
+    "air-traffic": "/api/v1/air-traffic",
+    "air-routes": "/api/v1/air-routes",
+    "sea-routes": "/api/v1/sea-routes",
     "space-weather": "/api/v1/space-weather",
     "earthquakes": "/api/v1/earthquakes?period=day",
     "wildfires": "/api/v1/natural-events/wildfires",
@@ -28,21 +52,34 @@ PUBLIC_FEED_ROUTES = {
     "storms": "/api/v1/storm-tracks",
     "rbn": "/api/v1/rbn-spots",
     "dx-cluster": "/api/v1/dx-cluster-spots",
+    "wspr": "/api/v1/wspr-spots",
 }
-MAX_TOPICS = 32
+MAX_TOPICS = 48
 REDIS_CHANNEL_PREFIX = "geo:feed:"
 REDIS_SNAPSHOT_PREFIX = "geo:feed:snapshot:"
 REDIS_LOCK_PREFIX = "geo:feed:lock:"
 REDIS_SNAPSHOT_TTL_SECONDS = 48 * 60 * 60
 LOCK_TTL_SECONDS = 60
 REDIS_CONTROL_CHANNEL = "geo:feed:__listener__"
-META_FIELDS = ("status", "fetchedAt", "expiresAt", "dataTime", "validFrom", "validTo", "staleReason")
+META_FIELDS = (
+    "status",
+    "fetchedAt",
+    "expiresAt",
+    "dataTime",
+    "validFrom",
+    "validTo",
+    "staleReason",
+)
 _RELEASE_LOCK = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end"
 
 
 def parse_topics(value: str) -> tuple[str, ...]:
     topics = tuple(dict.fromkeys(item.strip() for item in value.split(",") if item.strip()))
-    if not topics or len(topics) > MAX_TOPICS or any(topic not in PUBLIC_FEED_ROUTES for topic in topics):
+    if (
+        not topics
+        or len(topics) > MAX_TOPICS
+        or any(topic not in PUBLIC_FEED_ROUTES for topic in topics)
+    ):
         raise ValueError("unsupported feed topic")
     return topics
 
@@ -68,8 +105,13 @@ def _next_refresh_seconds(feed: dict[str, Any], *, minimum: float, retry: float)
 
 
 def _fingerprint(feed: dict[str, Any]) -> str:
-    comparable = {key: feed.get(key) for key in ("source", "kind", "status", "dataTime", "validFrom", "validTo", "data")}
-    encoded = json.dumps(comparable, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    comparable = {
+        key: feed.get(key)
+        for key in ("source", "kind", "status", "dataTime", "validFrom", "validTo", "data")
+    }
+    encoded = json.dumps(
+        comparable, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
+    )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
@@ -109,20 +151,28 @@ class FeedStreamHub:
 
     async def start(self) -> None:
         if self.redis is not None:
-            self._listener = asyncio.create_task(self._listen_redis(), name="geo-feed-redis-listener")
+            self._listener = asyncio.create_task(
+                self._listen_redis(), name="geo-feed-redis-listener"
+            )
             await asyncio.wait_for(self._redis_ready.wait(), timeout=10)
 
     async def close(self) -> None:
         self._closed = True
         for task in (*self._tasks.values(), *((self._listener,) if self._listener else ())):
             task.cancel()
-        await asyncio.gather(*self._tasks.values(), *([self._listener] if self._listener else []), return_exceptions=True)
+        await asyncio.gather(
+            *self._tasks.values(),
+            *([self._listener] if self._listener else []),
+            return_exceptions=True,
+        )
         if self._pubsub is not None:
             await self._pubsub.aclose()
             self._pubsub = None
 
     @asynccontextmanager
-    async def subscribe(self, topics: Sequence[str]) -> AsyncIterator[asyncio.Queue[dict[str, Any]]]:
+    async def subscribe(
+        self, topics: Sequence[str]
+    ) -> AsyncIterator[asyncio.Queue[dict[str, Any]]]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=64)
         for topic in topics:
             first_local_subscriber = not self._subscribers[topic]
@@ -160,7 +210,9 @@ class FeedStreamHub:
             try:
                 await self._pubsub.subscribe(f"{REDIS_CHANNEL_PREFIX}{topic}")
             except Exception:
-                logger.warning("Could not subscribe Redis feed channel for %s", topic, exc_info=True)
+                logger.warning(
+                    "Could not subscribe Redis feed channel for %s", topic, exc_info=True
+                )
 
     async def _unsubscribe_topic(self, topic: str) -> None:
         if self.redis is None:
@@ -171,11 +223,15 @@ class FeedStreamHub:
             try:
                 await self._pubsub.unsubscribe(f"{REDIS_CHANNEL_PREFIX}{topic}")
             except Exception:
-                logger.warning("Could not unsubscribe Redis feed channel for %s", topic, exc_info=True)
+                logger.warning(
+                    "Could not unsubscribe Redis feed channel for %s", topic, exc_info=True
+                )
 
     def _ensure_task(self, topic: str) -> None:
         if topic not in self._tasks or self._tasks[topic].done():
-            self._tasks[topic] = asyncio.create_task(self._refresh_loop(topic), name=f"geo-feed-{topic}")
+            self._tasks[topic] = asyncio.create_task(
+                self._refresh_loop(topic), name=f"geo-feed-{topic}"
+            )
 
     async def _read_snapshot(self, topic: str) -> dict[str, Any] | None:
         if self.redis is not None:
@@ -194,7 +250,9 @@ class FeedStreamHub:
         while not self._closed and self._subscribers.get(topic):
             current = await self._read_snapshot(topic)
             current_feed = current.get("feed") if current else None
-            remaining = _expiry_seconds(current_feed, self.min_refresh_seconds) if current_feed else 0
+            remaining = (
+                _expiry_seconds(current_feed, self.min_refresh_seconds) if current_feed else 0
+            )
             if current_feed and remaining > self.min_refresh_seconds:
                 await asyncio.sleep(remaining)
                 continue
@@ -206,14 +264,20 @@ class FeedStreamHub:
                 # Another replica may have refreshed while this worker waited for the lock.
                 current = await self._read_snapshot(topic)
                 current_feed = current.get("feed") if current else None
-                if current_feed and _expiry_seconds(current_feed, self.min_refresh_seconds) > self.min_refresh_seconds:
+                if (
+                    current_feed
+                    and _expiry_seconds(current_feed, self.min_refresh_seconds)
+                    > self.min_refresh_seconds
+                ):
                     delay = _expiry_seconds(current_feed, self.min_refresh_seconds)
                 else:
                     feed = await self.fetch_feed(topic)
                     if not isinstance(feed, dict):
                         raise TypeError("feed endpoint returned a non-object envelope")
                     await self._publish(topic, feed)
-                    delay = _next_refresh_seconds(feed, minimum=self.min_refresh_seconds, retry=self.retry_seconds)
+                    delay = _next_refresh_seconds(
+                        feed, minimum=self.min_refresh_seconds, retry=self.retry_seconds
+                    )
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -229,10 +293,16 @@ class FeedStreamHub:
         if self.redis is None:
             return token
         try:
-            acquired = await self.redis.set(f"{REDIS_LOCK_PREFIX}{topic}", token, nx=True, ex=LOCK_TTL_SECONDS)
+            acquired = await self.redis.set(
+                f"{REDIS_LOCK_PREFIX}{topic}", token, nx=True, ex=LOCK_TTL_SECONDS
+            )
             return token if acquired else None
         except Exception:
-            logger.warning("Redis lock unavailable for %s; skipping refresh to avoid duplicate provider requests", topic, exc_info=True)
+            logger.warning(
+                "Redis lock unavailable for %s; skipping refresh to avoid duplicate provider requests",
+                topic,
+                exc_info=True,
+            )
             return None
 
     async def _release_lock(self, topic: str, token: str) -> None:
@@ -257,8 +327,14 @@ class FeedStreamHub:
         if self.redis is not None:
             try:
                 encoded_snapshot = json.dumps(snapshot, separators=(",", ":"), ensure_ascii=False)
-                encoded_event = json.dumps({**event, "origin": self.origin}, separators=(",", ":"), ensure_ascii=False)
-                await self.redis.set(f"{REDIS_SNAPSHOT_PREFIX}{topic}", encoded_snapshot, ex=REDIS_SNAPSHOT_TTL_SECONDS)
+                encoded_event = json.dumps(
+                    {**event, "origin": self.origin}, separators=(",", ":"), ensure_ascii=False
+                )
+                await self.redis.set(
+                    f"{REDIS_SNAPSHOT_PREFIX}{topic}",
+                    encoded_snapshot,
+                    ex=REDIS_SNAPSHOT_TTL_SECONDS,
+                )
                 await self.redis.publish(f"{REDIS_CHANNEL_PREFIX}{topic}", encoded_event)
             except Exception:
                 logger.warning("Could not publish Redis update for %s", topic, exc_info=True)
@@ -268,10 +344,21 @@ class FeedStreamHub:
         snapshot = await self._read_snapshot(topic)
         feed = snapshot.get("feed") if snapshot else None
         if feed:
-            stale = {**feed, "status": "stale", "staleReason": "Live refresh failed; showing the last available feed."}
+            stale = {
+                **feed,
+                "status": "stale",
+                "staleReason": "Live refresh failed; showing the last available feed.",
+            }
             await self._publish(topic, stale)
         else:
-            self._fanout(topic, {"type": "error", "topic": topic, "message": "This feed is temporarily unavailable."})
+            self._fanout(
+                topic,
+                {
+                    "type": "error",
+                    "topic": topic,
+                    "message": "This feed is temporarily unavailable.",
+                },
+            )
 
     def _fanout(self, topic: str, event: dict[str, Any]) -> None:
         for queue in tuple(self._subscribers.get(topic, ())):
@@ -314,7 +401,9 @@ class FeedStreamHub:
                         snapshot = await self._read_snapshot(topic)
                         if snapshot:
                             self._latest[topic] = snapshot
-                        self._fanout(topic, {key: value for key, value in event.items() if key != "origin"})
+                        self._fanout(
+                            topic, {key: value for key, value in event.items() if key != "origin"}
+                        )
                     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                         logger.warning("Ignoring malformed Redis feed event", exc_info=True)
             except asyncio.CancelledError:

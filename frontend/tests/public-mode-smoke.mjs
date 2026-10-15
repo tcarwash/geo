@@ -59,6 +59,17 @@ try{
  const earthquakeRow=page.locator('.layer').filter({has:page.getByRole('switch',{name:'Earthquakes'})});
  await earthquakeRow.locator('.layer-status').waitFor();
  assert.match(await earthquakeRow.locator('.layer-status').textContent(),/^Stale/,'expired local feed data stays visible with an explicit stale state while offline');
+ const staleButton=page.getByRole('button',{name:/Stale data: 1 stale layer/});await staleButton.click();
+ const stalePanel=page.getByRole('region',{name:'Stale layer data'});await stalePanel.waitFor();
+ const staleDetails=await stalePanel.innerText();assert.match(staleDetails,/Earthquakes/,'the summary names stale layers');
+ assert.match(staleDetails,/Data · .+ ago/,'the summary reports source data age, not only retrieval age');
+ await page.keyboard.press('Escape');assert.equal(await stalePanel.count(),0,'Escape closes only the stale-data popover');
+ const cachedMapFeatures=await page.locator('.country-label').count(),clockBefore=await page.locator('.utc').innerText();
+ await page.context().setOffline(true);
+ await page.waitForFunction(before=>document.querySelector('.utc')?.textContent!==before,clockBefore,{timeout:3000});
+ assert(cachedMapFeatures>0&&await page.locator('.country-label').count()>0,'the loaded bundled map remains visible offline');
+ assert.equal(await page.locator('.map-message').count(),0,'offline does not replace the loaded atlas with an error screen');
+ await page.context().setOffline(false);
  assert.equal(streamRequests,2,'the persistent feed stream reconnects without polling individual feed endpoints');
  assert.equal(apiRequests.filter(call=>call.path==='/earthquakes').length,0,'public browsers receive feed data over SSE instead of per-layer GET polls');
  assert(apiRequests.some(call=>call.path==='/runtime'&&call.method==='GET'));
@@ -80,6 +91,26 @@ try{
  const remainingFeedRecords=await page.evaluate(()=>new Promise(resolve=>{const request=indexedDB.open('geo-public-feed-cache');request.onsuccess=()=>{const db=request.result,read=db.transaction('feeds','readonly').objectStore('feeds').getAll();read.onsuccess=()=>resolve(read.result.length)}}));
  assert.equal(remainingFeedRecords,0,'clear-local-data removes the bounded browser feed cache');
  assert.equal(await second.evaluate(()=>JSON.parse(localStorage.getItem('geo-draft')).scale),1.35,'resetting one display does not affect another profile');
+ const mobile=await browser.newPage({viewport:{width:390,height:844},hasTouch:true}),mobileErrors=[];
+ mobile.on('pageerror',error=>mobileErrors.push(error.message));
+ await mobile.addInitScript(state=>localStorage.setItem('geo-draft',JSON.stringify({...state,layers:state.layers.map(layer=>layer.id==='earthquakes'?{...layer,on:true}:layer)})),DEFAULT_STATE);
+ await mobile.route('**/api/v1/**',route=>{
+  const url=new URL(route.request().url());
+  if(url.pathname==='/api/v1/runtime')return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({deploymentMode:'public',sharedState:false,writeEnabled:false,disabledLayers:['contacts','pskreporter','pota','wsjtx']})});
+  if(url.pathname==='/api/v1/feed-stream'){
+   const feed={...earthquakeFeed,status:'stale',staleReason:'offline'};
+   return route.fulfill({status:200,contentType:'text/event-stream',headers:{'cache-control':'no-store'},body:`retry: 60000\nevent: feed\ndata: ${JSON.stringify({type:'snapshot',topic:'earthquakes',feed})}\n\n`});
+  }
+  return route.fulfill({status:404,contentType:'application/json',body:'{}'});
+ });
+ await mobile.goto(process.env.GEO_UI_URL||'http://127.0.0.1:4174');
+ await mobile.locator('.country-label').first().waitFor();
+ const mobileStaleButton=mobile.getByRole('button',{name:/Stale data: 1 stale layer/});await mobileStaleButton.waitFor({timeout:5000});
+ const mobileButtonBox=await mobileStaleButton.boundingBox();assert(mobileButtonBox.x>=0&&mobileButtonBox.x+mobileButtonBox.width<=390,'the stale indicator stays within the narrow viewport');
+ await mobileStaleButton.click();const mobilePanel=mobile.getByRole('region',{name:'Stale layer data'});await mobilePanel.waitFor();
+ const mobilePanelBox=await mobilePanel.boundingBox();assert(mobilePanelBox.x>=0&&mobilePanelBox.x+mobilePanelBox.width<=390,'the stale-layer details popover fits the narrow viewport');
+ assert.match(await mobilePanel.innerText(),/Earthquakes/);assert.deepEqual(mobileErrors,[]);
+ await mobile.close();
  console.log(`PASS public mode: local settings/layouts/drawings, isolated profiles, bounded offline feed cache and stale fallback; ${apiRequests.length} API request(s); no private-state/API-key requests`);
  await second.close();
  await page.close();

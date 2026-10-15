@@ -1,5 +1,5 @@
 export const PUBLIC_FEED_CACHE_MAX_ENTRIES=24;
-export const PUBLIC_FEED_CACHE_MAX_ENTRY_BYTES=2*1024*1024;
+export const PUBLIC_FEED_CACHE_MAX_ENTRY_BYTES=4*1024*1024;
 export const PUBLIC_FEED_CACHE_MAX_BYTES=8*1024*1024;
 const DATABASE='geo-public-feed-cache';
 const STORE='feeds';

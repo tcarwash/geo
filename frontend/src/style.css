@@ -173,4 +173,18 @@ input::placeholder,textarea::placeholder{color:#8c9faa}
 .feed-stream-status.reconnecting i{background:#e2b85e}
 .public-mode-note{margin:12px 0;padding:11px 12px;border:1px solid #84cfce55;border-radius:7px;background:#102630;color:#c1dfdc;font-size:11px;line-height:1.55}
 @media(max-width:600px){.public-mode-badge{font-size:7px;letter-spacing:.6px}.public-mode-note{font-size:10px}}
+.stale-data-control{display:flex;align-items:center;letter-spacing:normal}
+.stale-data-trigger{min-width:34px;min-height:30px;padding:4px 7px;gap:5px;border:1px solid #ddc58b38;border-radius:7px;background:#101f2a;color:#e2cf9d;font-size:10px;font-variant-numeric:tabular-nums}
+.stale-data-trigger svg{width:14px;height:14px}
+.stale-data-panel{position:fixed;z-index:920;top:72px;right:14px;width:min(340px,calc(100vw - 24px));max-height:min(58vh,420px);overflow:auto;padding:0 14px 10px;letter-spacing:normal;text-align:left;background:#101f2a;border-color:#d9c89738}
+.stale-data-panel>header{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0 10px;border-bottom:1px solid var(--line);background:#101f2a;font-size:12px}
+.stale-data-panel>header button{min-width:32px;min-height:32px;padding:5px;border:1px solid var(--line);border-radius:6px}
+.stale-data-guidance{margin:9px 0 2px;color:var(--muted);font-size:10px;line-height:1.45}
+.stale-data-panel ul{list-style:none;padding:0;margin:0}
+.stale-data-panel li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 12px;padding:11px 0;border-bottom:1px solid var(--line);font-size:11px}
+.stale-data-panel li strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.stale-data-panel li>span{color:#e2cf9d;font-size:10px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stale-data-panel li small{grid-column:1/-1;color:var(--muted);font-size:10px;line-height:1.45}
 @media(max-width:600px){.chron-live{left:12px;bottom:75px;padding:8px 52px 8px 10px}.chron-mode .chron-live{width:min(250px,calc(100vw - 150px))}.chron-mode .chron-controls-toggle{width:34px;height:34px;min-height:34px}.chron-legend{bottom:12px;gap:8px;padding:8px;font-size:9px}.chron-legend i{width:10px;height:10px}.chron-exit{right:12px;bottom:75px;min-height:42px;padding:8px 10px}.chron-hour-label{font-size:10px}.chron-hour-label small{font-size:6px}}
+
+.glyph-aircraft{color:#f1c779}.glyph-aircraft span{display:flex}.glyph-aircraft svg{width:22px;height:22px}

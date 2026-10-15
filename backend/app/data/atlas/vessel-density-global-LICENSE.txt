@@ -1,0 +1,4 @@
+World Bank / IMF · ESMAP / PROBLUE · Global Shipping Traffic Density.
+Creative Commons Attribution 4.0: https://creativecommons.org/licenses/by/4.0/
+Source: https://datacatalog.worldbank.org/search/dataset/0037580/global-shipping-traffic-density
+Geo changes: provider overview sampling, geographic averaging, Web Mercator reprojection, logarithmic relative-intensity color rendering and low-intensity opacity fading. Period: January 2015–February 2021.

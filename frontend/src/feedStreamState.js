@@ -1,5 +1,8 @@
+import {ADDITIONAL_FEED_ROUTES} from './additionalLayers.js';
 export const PUBLIC_FEED_CACHE_ROUTES={
- 'space-weather':'/space-weather',earthquakes:'/earthquakes?period=day',wildfires:'/natural-events/wildfires',volcanoes:'/natural-events/volcanoes',floods:'/natural-events/floods','severe-storms':'/natural-events/severe-storms','weather-alerts':'/weather-alerts',aurora:'/aurora','air-quality':'/air-quality',satellite:'/satellites/25544','goes-track':'/goes-satellites',muf:'/muf',storms:'/storm-tracks',rbn:'/rbn-spots','dx-cluster':'/dx-cluster-spots'
+ ...ADDITIONAL_FEED_ROUTES,
+ 'air-traffic':'/air-traffic','air-routes':'/air-routes','sea-routes':'/sea-routes',
+ 'space-weather':'/space-weather',earthquakes:'/earthquakes?period=day',wildfires:'/natural-events/wildfires',volcanoes:'/natural-events/volcanoes',floods:'/natural-events/floods','severe-storms':'/natural-events/severe-storms','weather-alerts':'/weather-alerts',aurora:'/aurora','air-quality':'/air-quality',satellite:'/satellites/25544','goes-track':'/goes-satellites',muf:'/muf',storms:'/storm-tracks',rbn:'/rbn-spots','dx-cluster':'/dx-cluster-spots',wspr:'/wspr-spots'
 };
 
 export function publicStreamTopics(value){

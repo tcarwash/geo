@@ -1,0 +1,2 @@
+Natural Earth map data is public domain. Source terms: https://www.naturalearthdata.com/about/terms-of-use/
+Geo generalizes non-point geometry by 0.025 degrees and rounds coordinates to four decimals; reference only, not for navigation.

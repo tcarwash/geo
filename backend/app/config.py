@@ -20,6 +20,10 @@ class Settings:
     satellite_catalog_ids: tuple[int, ...]
     wsjtx_udp_host: str
     wsjtx_udp_port: int
+    air_traffic_enabled: bool
+    air_traffic_latitude: float
+    air_traffic_longitude: float
+    air_traffic_radius_nm: int
     redis_url: str | None
 
 
@@ -45,6 +49,10 @@ def load_settings() -> Settings:
         satellite_catalog_ids=tuple(catalog_ids),
         wsjtx_udp_host=os.getenv("GEO_WSJT_X_UDP_HOST", "127.0.0.1"),
         wsjtx_udp_port=max(1, min(65535, int(os.getenv("GEO_WSJT_X_UDP_PORT", "2237")))),
+        air_traffic_enabled=(os.getenv("GEO_AIR_TRAFFIC_ENABLED") or ("true" if deployment_mode == "private" else "false")).lower() == "true",
+        air_traffic_latitude=max(-90, min(90, float(os.getenv("GEO_AIR_TRAFFIC_LATITUDE", "45.64")))),
+        air_traffic_longitude=max(-180, min(180, float(os.getenv("GEO_AIR_TRAFFIC_LONGITUDE", "-122.66")))),
+        air_traffic_radius_nm=max(1, min(250, int(os.getenv("GEO_AIR_TRAFFIC_RADIUS_NM", "250")))),
         redis_url=os.getenv("GEO_REDIS_URL") or None,
     )
 

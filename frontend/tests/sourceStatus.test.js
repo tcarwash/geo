@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {sourceStatusLabel,sourceStatusTone,sourceTimeDetails} from '../src/sourceStatus.js';
+import {sourceStatusLabel,sourceStatusTone,sourceTimeDetails,staleLayerEntries} from '../src/sourceStatus.js';
 
 const age=value=>`age:${value}`;
 
@@ -39,4 +39,23 @@ test('keeps stale cached sources in the stale visual state after refresh errors'
   assert.equal(sourceStatusTone({error:'timeout',dataTime:'09:00'}),'stale');
   assert.equal(sourceStatusTone({status:'stale',staleReason:'timeout'}),'stale');
   assert.equal(sourceStatusTone({status:'unavailable',error:'offline'}),'unavailable');
+});
+
+test('summarizes stale layers by data age, falls back to retrieval age, and omits unavailable feeds',()=>{
+  const feeds={
+    earthquakes:{status:'stale',loading:true,kind:'observation',dataTime:'2026-10-15T11:00:00Z',fetchedAt:'2026-10-15T11:02:00Z',staleReason:'upstream timeout'},
+    'air-traffic':{status:'stale',fetchedAt:'2026-10-15T10:30:00Z'},
+    aurora:{status:'unavailable',error:'offline'},
+  };
+  const layers=[{id:'air-traffic',name:'Air traffic'},{id:'earthquakes',name:'Earthquakes'},{id:'aurora',name:'Aurora'}];
+  assert.deepEqual(staleLayerEntries(feeds,layers,age),[
+    {id:'air-traffic',name:'Air traffic',age:'age:2026-10-15T10:30:00Z',ageBasis:'Retrieved',reason:null},
+    {id:'earthquakes',name:'Earthquakes',age:'age:2026-10-15T11:00:00Z',ageBasis:'Data',reason:'upstream timeout'},
+  ]);
+});
+
+test('marks the age unavailable when a stale layer has no valid timestamp',()=>{
+  assert.deepEqual(staleLayerEntries({muf:{status:'stale'}},[{id:'muf',name:'MUF'}],age),[
+    {id:'muf',name:'MUF',age:'Age unavailable',ageBasis:'',reason:null},
+  ]);
 });

@@ -21,3 +21,17 @@ def test_redis_pubsub_url_is_optional_and_configurable(monkeypatch: pytest.Monke
     assert load_settings().redis_url is None
     monkeypatch.setenv("GEO_REDIS_URL", "redis://localhost:6379/3")
     assert load_settings().redis_url == "redis://localhost:6379/3"
+
+
+def test_aircraft_defaults_private_enabled_public_disabled_and_explicit_opt_in(monkeypatch):
+    monkeypatch.delenv("GEO_AIR_TRAFFIC_ENABLED", raising=False)
+    monkeypatch.setenv("GEO_DEPLOYMENT_MODE", "private")
+    assert load_settings().air_traffic_enabled is True
+    monkeypatch.setenv("GEO_DEPLOYMENT_MODE", "public")
+    assert load_settings().air_traffic_enabled is False
+    monkeypatch.setenv("GEO_AIR_TRAFFIC_ENABLED", "")
+    assert load_settings().air_traffic_enabled is False
+    monkeypatch.setenv("GEO_AIR_TRAFFIC_ENABLED", "true")
+    monkeypatch.setenv("GEO_AIR_TRAFFIC_RADIUS_NM", "999")
+    assert load_settings().air_traffic_enabled is True
+    assert load_settings().air_traffic_radius_nm == 250

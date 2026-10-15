@@ -1,0 +1,4 @@
+PB2002 plate boundaries and plate polygons. Original model: Peter Bird (2003), An updated digital model of plate boundaries, Geochemistry, Geophysics, Geosystems, 4(3), 1027. GeoJSON conversion: Hugo Ahlenius / Nordpil; source shapefile conversion: fraxen/tectonicplates.
+Open Data Commons Attribution License (ODbL) 1.0: https://opendatacommons.org/licenses/by/1-0/
+Dataset: https://github.com/fraxen/tectonicplates
+Geo simplifies geometries to 0.02 degrees and rounds coordinates to four decimals. PB2002 has incomplete polar coverage; the layer is a scientific overview, not a precision geologic survey.

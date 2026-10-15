@@ -12,4 +12,8 @@ frontend/dist/
 *.sqlite3-shm
 *.sqlite3-wal
 backend/.venv/
+/backend/build/
+/backend/dist/
+/desktop/node_modules/
+/desktop/out/
 /backups/

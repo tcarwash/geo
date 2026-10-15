@@ -1,0 +1,64 @@
+{
+  "source": "https://datacatalogfiles.worldbank.org/ddh-published/0037580/5/DR0045406/shipdensity_global.zip",
+  "catalog": "https://datacatalog.worldbank.org/search/dataset/0037580/global-shipping-traffic-density",
+  "archiveSha256": "7d103de52acf355ffc2436909d5d98e9db93f74d6ad237680e5da6d6d24a9248",
+  "attribution": "World Bank / IMF \u00b7 ESMAP / PROBLUE",
+  "license": "CC BY 4.0",
+  "observationStart": "2015-01-01",
+  "observationEnd": "2021-02",
+  "sourceQuantity": "Hourly AIS report positions per 0.005\u00b0 source cell, moving and stationary vessels, all vessel categories",
+  "sourceProfile": {
+    "width": 72006,
+    "height": 33998,
+    "bounds": [
+      -180.015311275,
+      -84.98735206299992,
+      180.01468872500004,
+      85.00264793700009
+    ],
+    "crs": "EPSG:4326",
+    "nativeCellDegrees": 0.005,
+    "nodata": 2147483647.0,
+    "providerOverviews": [
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128,
+      255
+    ]
+  },
+  "outputProjection": "EPSG:3857",
+  "outputPixels": [
+    4096,
+    4096
+  ],
+  "transformations": "Read provider raster overviews; average to 4096 x 2048 geographic overview; average-reproject into Web Mercator; logarithmic relative-intensity colors using the European EMODnet palette, with low-intensity opacity fading. This is a visualization, not unique vessel counts or current traffic.",
+  "displayStyle": {
+    "palette": [
+      "#0b2c7a",
+      "#20998f",
+      "#00db00",
+      "#ffff00",
+      "#eda113",
+      "#dd3a1b",
+      "#9b1800"
+    ],
+    "log10ReportStops": [
+      0.0,
+      6.2,
+      7.1,
+      7.6,
+      7.85,
+      8.0,
+      8.3
+    ],
+    "opacity": "clip((log10(1 + overview report count) - 4.5) / 2.5, 0, 1)^2",
+    "paletteSource": "https://ows.emodnet-humanactivities.eu/wms?service=WMS&version=1.1.1&request=GetStyles&layers=vesseldensity_allavg"
+  },
+  "positiveOverviewPixels": 2072600,
+  "maximumOverviewValue": 54497168.0,
+  "pngBytes": 5305941
+}

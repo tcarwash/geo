@@ -79,7 +79,7 @@ Priority additions:
 | First | Surface temperature | Familiar, useful context with a clear unit-bearing legend | Share the weather-model pipeline where possible; distinguish modeled from observed temperature |
 | First | Radar reflectivity | Complements existing global precipitation estimates | NOAA radar/nowCOAST products are candidates; validate current service, geographic coverage, frames, and permitted caching |
 | Next | Weather alert polygons | Actionable regional context | NWS alerts as a US-scoped candidate; no implied global coverage or emergency-service reliability |
-| Next | Night lights | Strong living-atlas identity without high refresh cost | NASA Black Marble or an appropriate VIIRS composite; verify licensing, tile product, acquisition period, and gaps |
+| Done | City lights | Daily Black Marble nighttime radiance, provider-dated and served as an opt-in NASA GIBS layer | Product dates and retrieval limits are documented; see the follow-up below |
 | Next | Higher-resolution active-fire detections | More precise than EONET event summaries | NASA FIRMS candidate; validate credentials, quotas, latency, and confidence fields; label detections rather than fire perimeters |
 
 For each new layer: implement one vertical slice (provider → cache → map → legend → inspector → tests), then accept or stop before adding another.
@@ -116,7 +116,7 @@ Aircraft, ships, dense infrastructure/POIs, and wildlife tracking. These introdu
 
 ## Proposed transport, infrastructure, air-quality, and satellite layers
 
-The CAMS air-quality row below has its first opt-in vertical slice; the other rows remain planning only. Prefer source data with explicit reuse rights; a public map or endpoint is not by itself permission to redistribute. Distinguish scheduled/reference routes from observed live traffic, and keep every new layer opt-in.
+CAMS air quality and the air/sea transport layers now have opt-in implementations. The transport slice uses regional ADSB.lol observations, historical OpenFlights connections, and bundled schematic shipping corridors; current FAA airways, OSM ferries, charted TSS, and current global schedules remain candidates. Prefer source data with explicit reuse rights; a public map or endpoint is not by itself permission to redistribute. Distinguish scheduled/reference routes from observed live traffic, and keep every new layer opt-in.
 
 | Layer | Candidate source and scope | Access / freshness | Decision and display contract |
 |---|---|---|---|
@@ -175,3 +175,40 @@ Acceptance: static routes are distinguished from live tracks; each layer has cov
 The NWS alert layer is an initial weather-data vertical slice: the browser can opt into a server-cached GeoJSON feed; severity is represented by color and a legend; polygon inspection exposes severity, urgency, certainty, expiry, and the official alert link. The upstream API requires an identifying User-Agent, offers GeoJSON, and describes its rate limits as unpublished; the adapter sets a User-Agent and caches for two minutes. Its active-alert endpoint is United States coverage, not global coverage. Live checks returned more than 750 alerts, of which about 210 had polygon boundaries; alerts without polygon geometry remain counted in the feed but are not drawn. NWS API documentation: https://www.weather.gov/documentation/services-web-api
 
 Continue validation and usability work before broadening the data catalog. Wind/pressure remains the next proposed global weather source family, followed by temperature and regional radar; do not integrate them until an operationally supportable provider/pipeline is established.
+
+## Transport implementation checkpoint (2026-10-11)
+
+- Air traffic: keyless ADSB.lol point queries, server-configured center (default Portland), radius capped at 250 nm, one-minute shared cache, stale fallback, 1,000-aircraft cap, fresh positioned airborne reports only. Heading-oriented markers, optional callsign labels, region circle, and inspection show the actual observation time, feet, knots, and position source. Local live probe returned 361 positions. No global feed, flight histories, or airline-only filtering is claimed. Disabled by default in public mode; operator production contact remains required before public enablement.
+- Air routes: bundled top 2,000 of 18,858 resolved direct airport pairs from OpenFlights' June 2014 snapshot, selected by distinct airline count and combining directions/codeshares. Great-circle reference arcs split at the date line; inspection names both airports. Explicitly historical, not current schedules or FAA airways. The transformed database is available through the API under ODbL.
+- Sea routes: bundled P. Benden / CIA global shipping lanes, based on a 2012 map and published in 2022. Major/Middle/Minor widths, date-line splitting, category inspection, and exact custom-license notice. These are schematic corridors, not AIS observations, current sailing schedules, ferry routes, or navigation guidance.
+- Shared UX: Air & sea transport group, opt-in toggles, opacity, dynamic legend, visible map attribution, explicit source vintages, public SSE and bounded browser caching. Public-disabled air traffic remains visible with a disabled switch and explanation.
+- Verified locally: 76 frontend tests, 56 backend tests (1 optional Redis test skipped), Ruff, Vite production build, real ADSB.lol adapter probe, desktop 1440×900/mobile 390×844 browser enable/remove/re-enable and aircraft inspection, public gating with zero aircraft requests, and real backend SSE snapshots for both route feeds. Existing Geoman sourcemap, large-chunk, and Starlette deprecation warnings remain. Public browser smoke uses controlled SSE snapshots populated from actual route API responses. No production deployment, physical-device performance test, Redis multi-replica transport soak, or provider production contact was performed.
+
+## Additional layer implementation checkpoint (2026-10-11)
+
+The earlier atlas/environment checkpoint added airports, ports, ocean depth, rivers, lakes, night lights, surface wind, sea-level pressure, sea-surface temperature, ocean currents, waves and primary swell, European/global vessel density, GloTEC electron content, and submarine cables. The old night-lights and product-count details were superseded by the follow-up below. Natural Earth references and OSM cables are bundled with pinned provenance and licenses. NOAA GFS/GFS Wave use bounded GRIB byte ranges and actual issue/valid times; currents preserve masked gaps and show stale provider analyses. NASA GIBS products use explicit provider dates and Web Mercator requests. Source contracts and rebuild commands are in `backend/README.md` and `backend/app/data/atlas/README.md`.
+
+Global vessel density now shares EMODnet’s blue/teal/green/yellow palette, with sparse-report opacity fading. The global source remains the World Bank/IMF January 2015–February 2021 cumulative hourly AIS-report product; Europe remains EMODnet’s 2024 annual average in vessel hours/km²/month. The same colors do not imply comparable numeric values or observation periods.
+
+Verified locally: 81 frontend tests; 66 backend tests passed / one optional Redis test skipped; Ruff; Vite build; desktop and touch rendering/opacity/removal/re-enable for all 15; actual wind animation, reduced-motion behavior and swell inspection; all 15 public snapshots, bounded IndexedDB cache and Chron composition; real backend SSE delivery; local Docker build and ecCodes self-check. Existing Geoman sourcemap/large-chunk and Starlette warnings remain. Production deployment, physical display soak and Redis multi-replica validation remain separate.
+
+## Geology, city lights, vegetation and smoke follow-up (2026-10-11)
+
+- Added Tectonic plates: PB2002 named plate polygons and 241 generalized boundary segments, from a pinned 2014 GeoJSON conversion of Peter Bird’s 2003 present-day model. The data has incomplete polar coverage and carries an ODbL 1.0 notice.
+- The existing night-lights switch is now called City lights and uses the latest daily NOAA-20/VIIRS Black Marble product in NASA GIBS rather than the 2016 annual image.
+- Added global 500 m NOAA-20/VIIRS rolling 8-day NDVI for vegetation greenness.
+- Added daily Terra/Aqua MODIS MAIAC aerosol optical depth as Smoke & aerosols. It adds a daytime satellite plume footprint alongside the existing NASA EONET wildfire points and CAMS forecast cells, and clearly identifies that AOD also responds to dust/other aerosols and is not a surface PM2.5 measurement.
+- NASA GIBS layers read the available product date from WMTS capabilities and use that exact time in their WMS requests. Live adapter calls returned 2026-10-10 for all three updated/new raster products. Local backend and frontend builds, live GIBS metadata, and desktop rendering of all four products passed. Production deployment remains separate.
+
+## Stale-data affordance and offline behavior (2026-10-15)
+
+- Added a compact alert/count control to the top bar, shown only while one or more cached feeds are stale. Its keyboard-dismissible details popover names each layer, reports source-data age when available (otherwise last-retrieval age), and includes the stale reason. The control remains accessible when the date/status cluster is hidden at narrow widths.
+- In an already-open tab, the UTC clock continues from the browser clock and the bundled political/country map remains visible after network loss. Public mode can restore cached feed snapshots from IndexedDB and marks expired data stale. This is not full offline boot: Geo has no service worker guaranteeing app reloads from cache, and remote basemaps, imagery tiles, and live feeds still require network. The browser smoke verified the loaded map and changing UTC clock during offline emulation; it does not verify offline reload or private-mode feed persistence.
+- Local verification: all 83 frontend unit tests; public-mode desktop smoke covers stale-cache details and offline clock/map behavior, while the 390×844 smoke verifies the stale control and popover fit; Vite production build. Existing Leaflet-Geoman source-map and >500 kB chunk advisories remain; no deployment performed.
+
+## Desktop packaging foundation (2026-10-15)
+
+- The same repository now has a thin Electron shell around the existing Vite frontend and FastAPI backend; the UI and data adapters remain shared rather than forked. The local service starts in private/single-user mode, serves the packaged frontend and API on loopback, stores SQLite under Electron user data, and does not require Redis or Compose.
+- Existing WSJT-X UDP decoding remains in the shared backend. Desktop defaults its listener to `127.0.0.1:2237`; `GEO_WSJT_X_UDP_PORT` can override the port. Other local adapters should extend the shared backend/local-source contract, not Electron main-process code.
+- CI now builds native Linux, Windows, and macOS packages from the same source tree and uploads them as artifacts; `v*` tags publish packages to GitHub Releases. Locally verified Linux x64 ZIP and DEB builds launch successfully; the packaged smoke checks private mode, bundled map/clock, offline continuity, and WSJT-X listener binding. Windows/macOS CI builds and release publication are not yet run. Packages are unsigned; signing/notarization requires release credentials.
+- Offline coverage remains the existing local vector atlas and already-loaded UI state. Remote imagery/live feeds still need connectivity; managed offline tile packs remain future work. No production deployment performed.

@@ -1,4 +1,5 @@
 const glyphs={
+ aircraft:new URL('./assets/glyphs/aircraft.svg?no-inline',import.meta.url).href,
  iss:new URL('./assets/glyphs/iss.svg?no-inline',import.meta.url).href,
  station:new URL('./assets/glyphs/station.svg?no-inline',import.meta.url).href,
  sun:new URL('./assets/glyphs/sun.svg?no-inline',import.meta.url).href,

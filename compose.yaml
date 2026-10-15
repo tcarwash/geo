@@ -28,6 +28,10 @@ services:
       geo-events:
         condition: service_healthy
     environment:
+      GEO_AIR_TRAFFIC_ENABLED: ${GEO_AIR_TRAFFIC_ENABLED:-}
+      GEO_AIR_TRAFFIC_LATITUDE: ${GEO_AIR_TRAFFIC_LATITUDE:-45.64}
+      GEO_AIR_TRAFFIC_LONGITUDE: ${GEO_AIR_TRAFFIC_LONGITUDE:-122.66}
+      GEO_AIR_TRAFFIC_RADIUS_NM: ${GEO_AIR_TRAFFIC_RADIUS_NM:-250}
       GEO_DATABASE_PATH: /data/geo.sqlite3
       GEO_DEPLOYMENT_MODE: ${GEO_DEPLOYMENT_MODE:-private}
       GEO_REDIS_URL: ${GEO_REDIS_URL:-redis://geo-events:6379/0}

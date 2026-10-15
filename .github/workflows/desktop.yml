@@ -1,0 +1,129 @@
+name: Desktop packages
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/desktop.yml'
+      - 'backend/**'
+      - 'frontend/**'
+      - 'desktop/**'
+      - 'data/**'
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.7.0
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+      - name: Install Python 3.12
+        run: uv python install 3.12
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Test frontend
+        working-directory: frontend
+        run: npm run check
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+      - name: Test desktop launcher configuration
+        working-directory: desktop
+        run: pnpm check
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --python 3.12 --locked --extra dev --extra desktop
+      - name: Test backend
+        working-directory: backend
+        run: uv run pytest -q
+      - name: Lint backend and sidecar builder
+        working-directory: backend
+        run: uv run ruff check app tests desktop_launcher.py build_desktop.py
+
+  package:
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.7.0
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+      - name: Install Python 3.12
+        run: uv python install 3.12
+      - name: Build shared Geo frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Build local FastAPI sidecar
+        working-directory: backend
+        run: |
+          uv sync --python 3.12 --locked --no-dev --extra desktop
+          uv run --python 3.12 --no-dev --extra desktop python build_desktop.py
+      - name: Install Electron packaging dependencies
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+      - name: Package Geo desktop app
+        working-directory: desktop
+        run: pnpm make
+      - name: Smoke test the packaged Linux app
+        if: runner.os == 'Linux'
+        working-directory: frontend
+        run: node tests/electron-smoke.mjs
+      - name: Upload platform package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: geo-desktop-${{ runner.os }}-${{ runner.arch }}
+          path: desktop/out/make/**/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download desktop packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: geo-desktop-*
+          path: release-assets
+          merge-multiple: true
+      - name: Publish desktop packages to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/**/*
+          generate_release_notes: true

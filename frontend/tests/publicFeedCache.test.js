@@ -12,6 +12,6 @@ test('public feed cache honors provider expiry and uses a short fallback TTL',()
  assert.equal(publicFeedCacheExpiry({expiresAt:'2026-10-10T12:05:00Z'},now),Date.parse('2026-10-10T12:05:00Z'));
  assert.equal(publicFeedCacheExpiry({},now),now+30_000);
  assert.equal(PUBLIC_FEED_CACHE_MAX_ENTRIES,24);
- assert.equal(PUBLIC_FEED_CACHE_MAX_ENTRY_BYTES,2*1024*1024);
+ assert.equal(PUBLIC_FEED_CACHE_MAX_ENTRY_BYTES,4*1024*1024);
  assert.equal(PUBLIC_FEED_CACHE_MAX_BYTES,8*1024*1024);
 });

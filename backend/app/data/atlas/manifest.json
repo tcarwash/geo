@@ -1,0 +1,98 @@
+{
+  "airports": {
+    "features": 893,
+    "bytes": 349130,
+    "sources": [
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_airports.geojson",
+        "sha256": "28892a892f670f1cf654c62253c6169fdc2504b92c956addb4ac8224f50cebe0"
+      }
+    ]
+  },
+  "ports": {
+    "features": 1081,
+    "bytes": 236016,
+    "sources": [
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_ports.geojson",
+        "sha256": "c5a5028f5187a5e1b9fe7f0fab99804a8be7482099a2365d404fb7e9dd6b5457"
+      }
+    ]
+  },
+  "rivers": {
+    "features": 462,
+    "bytes": 328616,
+    "sources": [
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_50m_rivers_lake_centerlines.geojson",
+        "sha256": "f286e0ce978fde999ca2d7a78c764be08542e19b63cded52b05c12d5173ccc51"
+      }
+    ]
+  },
+  "lakes": {
+    "features": 412,
+    "bytes": 221427,
+    "sources": [
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_50m_lakes.geojson",
+        "sha256": "d350b75978b26fe839b797c2c529b2fb8f47fb3983c03f4964e36d5df9378a52"
+      }
+    ]
+  },
+  "bathymetry": {
+    "features": 5779,
+    "bytes": 13052438,
+    "sources": [
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_bathymetry_A_10000.geojson",
+        "sha256": "8821d6e8003f0a74a6d1d18379ded88ee638b3e457f2bab9d4124acc3cd15492"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_bathymetry_B_9000.geojson",
+        "sha256": "ff0e96b3c3baa863f82503fe3434bd604ffe6fbd27cabee7f71dd1807fcee5a0"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_bathymetry_C_8000.geojson",
+        "sha256": "8f3694037be7f54bf49fc6fa3f2045f325eacdb69c8828b8d482b303b57e358a"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_bathymetry_D_7000.geojson",
+        "sha256": "19eb5dd59d37d6c6da9b0d04252769c62708aad6a1578f16d6a7b8b30fd05c56"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_bathymetry_E_6000.geojson",
+        "sha256": "75fc34afdd5bc54a3ebe093fc0a680af70cf255f1b3e7e80ad75e795f5cc4c8d"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_bathymetry_F_5000.geojson",
+        "sha256": "e7b663f3f6144c1d23b8205618fd1eeb5256c4b03785a8ed009178209d68ba72"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_bathymetry_G_4000.geojson",
+        "sha256": "ad876e6b6b686494a0e89f0096880a6755aee77af3d738794bbbc92216afcf3d"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_bathymetry_H_3000.geojson",
+        "sha256": "28fda8b34dfb8615f9644bff3e56c184501e21dccb807d428432e56d8dac0cf5"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_bathymetry_I_2000.geojson",
+        "sha256": "cdedc746ce06e1a051cb8905e8f07855225ccbd3560ce3a66607651fc6953ce2"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_bathymetry_J_1000.geojson",
+        "sha256": "fa30219901dd4de34b9f5b20f41bc7c055f9fc9d58cf157ad2679c95239cd366"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_bathymetry_K_200.geojson",
+        "sha256": "5c6c182da8608153ea2dce22dfb32c987e5390e0bd4a122266143ba181a7b636"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_bathymetry_L_0.geojson",
+        "sha256": "e5efd9f47d56791c949de6d099d6a9cdd4d1aeca98d5dd63947c0b44b9966008"
+      }
+    ],
+    "imageBytes": 1383428,
+    "format": "4096 x 4096 Web Mercator PNG"
+  }
+}

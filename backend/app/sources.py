@@ -38,6 +38,20 @@ WAM_IPE_INDEX = "https://services.swpc.noaa.gov/images/animations/wam-ipe/wfs_io
 RBN_SPOTS = "https://vailrerbn.com/api/v1/spots"
 DXCLUSTER_SPOTS = "https://dxc.jo30.de/dxcache/spots"
 POTA_SPOTS = "https://api.pota.app/spot/activator"
+WSPR_LIVE = "https://db1.wspr.live/"
+WSPR_BANDS = {
+    1: "160m",
+    3: "80m",
+    5: "60m",
+    7: "40m",
+    10: "30m",
+    14: "20m",
+    18: "17m",
+    21: "15m",
+    24: "12m",
+    28: "10m",
+    50: "6m",
+}
 GOES_CATALOG_IDS = {"GOES-East": 60133, "GOES-West": 51850}
 OPEN_METEO_AIR_QUALITY = "https://air-quality-api.open-meteo.com/v1/air-quality"
 AIR_QUALITY_GRID_STEP = 12
@@ -46,7 +60,11 @@ AIR_QUALITY_BATCH_SIZE = 100
 
 def _parse_epoch_ms(value: Any) -> str | None:
     try:
-        return datetime.fromtimestamp(float(value) / 1000, UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        return (
+            datetime.fromtimestamp(float(value) / 1000, UTC)
+            .isoformat(timespec="seconds")
+            .replace("+00:00", "Z")
+        )
     except (TypeError, ValueError, OSError, OverflowError):
         return None
 
@@ -67,7 +85,9 @@ def _air_quality_coordinates() -> list[tuple[float, float]]:
     half_step = AIR_QUALITY_GRID_STEP // 2
     latitudes = range(-90 + half_step, 90, AIR_QUALITY_GRID_STEP)
     longitudes = range(-180 + half_step, 180, AIR_QUALITY_GRID_STEP)
-    return [(float(latitude), float(longitude)) for latitude in latitudes for longitude in longitudes]
+    return [
+        (float(latitude), float(longitude)) for latitude in latitudes for longitude in longitudes
+    ]
 
 
 async def air_quality(client: httpx.AsyncClient) -> dict[str, Any]:
@@ -94,7 +114,9 @@ async def air_quality(client: httpx.AsyncClient) -> dict[str, Any]:
             payload = response.json()
             results = payload if isinstance(payload, list) else [payload]
             if len(results) != len(batch) or any(not isinstance(item, dict) for item in results):
-                raise TypeError("Open-Meteo air-quality response location count does not match request")
+                raise TypeError(
+                    "Open-Meteo air-quality response location count does not match request"
+                )
             for (latitude, longitude), result in zip(batch, results, strict=True):
                 current = result.get("current")
                 if not isinstance(current, dict):
@@ -104,27 +126,59 @@ async def air_quality(client: httpx.AsyncClient) -> dict[str, Any]:
                     raise TypeError("Open-Meteo air-quality response has no valid time")
                 data_times.append(valid_time)
                 pm25 = current.get("pm2_5")
-                if not isinstance(pm25, (int, float)) or isinstance(pm25, bool) or not math.isfinite(pm25) or pm25 < 0:
+                if (
+                    not isinstance(pm25, (int, float))
+                    or isinstance(pm25, bool)
+                    or not math.isfinite(pm25)
+                    or pm25 < 0
+                ):
                     continue
                 pm10 = current.get("pm10")
-                if not isinstance(pm10, (int, float)) or isinstance(pm10, bool) or not math.isfinite(pm10) or pm10 < 0:
+                if (
+                    not isinstance(pm10, (int, float))
+                    or isinstance(pm10, bool)
+                    or not math.isfinite(pm10)
+                    or pm10 < 0
+                ):
                     pm10 = None
                 half = AIR_QUALITY_GRID_STEP / 2
                 west, east = max(-180, longitude - half), min(180, longitude + half)
                 south, north = max(-85, latitude - half), min(85, latitude + half)
-                features.append({
-                    "type": "Feature",
-                    "id": f"cams-global:{latitude:g}:{longitude:g}",
-                    "geometry": {"type": "Polygon", "coordinates": [[[west, south], [east, south], [east, north], [west, north], [west, south]]]},
-                    "properties": {"pm2_5": float(pm25), "pm10": float(pm10) if pm10 is not None else None, "validTime": valid_time},
-                })
+                features.append(
+                    {
+                        "type": "Feature",
+                        "id": f"cams-global:{latitude:g}:{longitude:g}",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [west, south],
+                                    [east, south],
+                                    [east, north],
+                                    [west, north],
+                                    [west, south],
+                                ]
+                            ],
+                        },
+                        "properties": {
+                            "pm2_5": float(pm25),
+                            "pm10": float(pm10) if pm10 is not None else None,
+                            "validTime": valid_time,
+                        },
+                    }
+                )
         if not features:
             raise TypeError("Open-Meteo returned no finite PM2.5 samples")
         data_time = max(data_times, default=None)
         envelope = cache.envelope(
             source="open-meteo-cams-global",
             kind="forecast",
-            data={"type": "FeatureCollection", "features": features, "gridSpacingDegrees": AIR_QUALITY_GRID_STEP, "modelResolutionKm": 45},
+            data={
+                "type": "FeatureCollection",
+                "features": features,
+                "gridSpacingDegrees": AIR_QUALITY_GRID_STEP,
+                "modelResolutionKm": 45,
+            },
             attribution="Open-Meteo · CAMS Global · CC BY 4.0",
             documentation_url="https://open-meteo.com/en/docs/air-quality-api",
             data_time=data_time,
@@ -144,7 +198,9 @@ async def _get_json(client: httpx.AsyncClient, url: str) -> Any:
     return response.json()
 
 
-async def earthquakes(client: httpx.AsyncClient, period: str, min_magnitude: float) -> dict[str, Any]:
+async def earthquakes(
+    client: httpx.AsyncClient, period: str, min_magnitude: float
+) -> dict[str, Any]:
     url = USGS_FEEDS[period]
     key = f"usgs:{period}"
 
@@ -172,7 +228,8 @@ async def earthquakes(client: httpx.AsyncClient, period: str, min_magnitude: flo
     data = result["data"]
     features = data.get("features", [])
     filtered = [
-        feature for feature in features
+        feature
+        for feature in features
         if isinstance(feature, dict)
         and isinstance(feature.get("properties"), dict)
         and isinstance(feature["properties"].get("mag"), (int, float))
@@ -187,7 +244,9 @@ async def natural_events(client: httpx.AsyncClient, category: str) -> dict[str, 
         raise ValueError("unsupported natural-event category")
 
     async def fetch() -> dict[str, Any]:
-        response = await client.get(EONET_EVENTS, params={"category": category_id, "status": "open", "limit": 500})
+        response = await client.get(
+            EONET_EVENTS, params={"category": category_id, "status": "open", "limit": 500}
+        )
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, dict) or payload.get("type") != "FeatureCollection":
@@ -196,7 +255,8 @@ async def natural_events(client: httpx.AsyncClient, category: str) -> dict[str, 
         if not isinstance(raw_features, list):
             raise TypeError("NASA EONET response features are missing")
         features = [
-            feature for feature in raw_features
+            feature
+            for feature in raw_features
             if isinstance(feature, dict)
             and feature.get("type") == "Feature"
             and isinstance(feature.get("properties"), dict)
@@ -204,7 +264,11 @@ async def natural_events(client: httpx.AsyncClient, category: str) -> dict[str, 
             and feature["geometry"].get("type") in {"Point", "Polygon", "MultiPolygon"}
         ]
         data_time = max(
-            (parsed for feature in features if (parsed := _parse_iso(feature["properties"].get("date")))),
+            (
+                parsed
+                for feature in features
+                if (parsed := _parse_iso(feature["properties"].get("date")))
+            ),
             default=None,
         )
         data = {**payload, "features": features}
@@ -258,7 +322,11 @@ async def muf_forecast(client: httpx.AsyncClient) -> dict[str, Any]:
     async def fetch() -> dict[str, Any]:
         response = await client.get(WAM_IPE_INDEX)
         response.raise_for_status()
-        names = set(re.findall(r"WFS_IPE05_GLOBAL_TEC-MUF-TEC-MUF_(\d{8}T\d{4})_(\d{8}T\d{4})\.png", response.text))
+        names = set(
+            re.findall(
+                r"WFS_IPE05_GLOBAL_TEC-MUF-TEC-MUF_(\d{8}T\d{4})_(\d{8}T\d{4})\.png", response.text
+            )
+        )
         if not names:
             raise TypeError("NOAA WAM-IPE index contains no global MUF imagery")
         now = datetime.now(UTC)
@@ -300,7 +368,13 @@ async def psk_reporter_paths(
     async def fetch() -> dict[str, Any]:
         response = await client.get(
             PSK_REPORTS,
-            params={"senderCallsign": call, "flowStartSeconds": -21600, "rptlimit": 500, "rronly": 1, "nolocator": 0},
+            params={
+                "senderCallsign": call,
+                "flowStartSeconds": -21600,
+                "rptlimit": 500,
+                "rronly": 1,
+                "nolocator": 0,
+            },
         )
         response.raise_for_status()
         try:
@@ -319,19 +393,39 @@ async def psk_reporter_paths(
                 continue
             try:
                 frequency = int(attrs["frequency"]) if attrs.get("frequency") else None
-                observed = datetime.fromtimestamp(int(attrs["flowStartSeconds"]), UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+                observed = (
+                    datetime.fromtimestamp(int(attrs["flowStartSeconds"]), UTC)
+                    .isoformat(timespec="seconds")
+                    .replace("+00:00", "Z")
+                )
             except (KeyError, ValueError, OSError, OverflowError):
                 observed, frequency = None, None
-            features.append({
-                "type": "Feature",
-                "id": f"{call}:{receiver}:{grid}:{frequency}:{observed}",
-                "geometry": {"type": "LineString", "coordinates": [[longitude, latitude], [position[0], position[1]]]},
-                "properties": {"sender": call, "receiver": receiver, "receiverLocator": grid, "frequencyHz": frequency, "observedAt": observed, "precision": "reported Maidenhead grid"},
-            })
+            features.append(
+                {
+                    "type": "Feature",
+                    "id": f"{call}:{receiver}:{grid}:{frequency}:{observed}",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[longitude, latitude], [position[0], position[1]]],
+                    },
+                    "properties": {
+                        "sender": call,
+                        "receiver": receiver,
+                        "receiverLocator": grid,
+                        "frequencyHz": frequency,
+                        "observedAt": observed,
+                        "precision": "reported Maidenhead grid",
+                    },
+                }
+            )
         return cache.envelope(
-            source="psk-reporter", kind="observation", data={"type": "FeatureCollection", "features": features},
+            source="psk-reporter",
+            kind="observation",
+            data={"type": "FeatureCollection", "features": features},
             attribution="PSK Reporter · amateur radio reception reports",
-            documentation_url="https://www.pskreporter.info/pskdev.html", data_time=_now_iso(), ttl_seconds=300,
+            documentation_url="https://www.pskreporter.info/pskdev.html",
+            data_time=_now_iso(),
+            ttl_seconds=300,
         )
 
     return await cache.get_or_fetch(f"psk:paths:{call}:{latitude:.4f}:{longitude:.4f}", fetch)
@@ -358,9 +452,47 @@ async def rbn_spots(client: httpx.AsyncClient) -> dict[str, Any]:
             if not spotted or not position:
                 continue
             spotter_position = adif.parse_locator(row.get("spotter_grid"))
-            geometry = {"type": "LineString", "coordinates": [[spotter_position[0], spotter_position[1]], [position[0], position[1]]]} if spotter_position else {"type": "Point", "coordinates": [position[0], position[1]]}
-            features.append({"type": "Feature", "id": f"rbn:{row.get('id', spotted)}", "geometry": geometry, "properties": {"spotter": row.get("spotter"), "spotted": spotted, "frequencyKHz": row.get("frequency"), "mode": row.get("mode"), "snrDb": row.get("snr"), "wpm": row.get("wpm"), "observedAt": row.get("timestamp"), "grid": row.get("grid"), "spotterGrid": row.get("spotter_grid"), "precision": "reported Maidenhead grid" if spotter_position else "spotted-station Maidenhead grid"}})
-        return cache.envelope(source="reverse-beacon-network", kind="observation", data={"type": "FeatureCollection", "features": features}, attribution="Reverse Beacon Network · via Vail ReRBN", documentation_url="https://www.reversebeacon.net/", data_time=_now_iso(), ttl_seconds=60)
+            geometry = (
+                {
+                    "type": "LineString",
+                    "coordinates": [
+                        [spotter_position[0], spotter_position[1]],
+                        [position[0], position[1]],
+                    ],
+                }
+                if spotter_position
+                else {"type": "Point", "coordinates": [position[0], position[1]]}
+            )
+            features.append(
+                {
+                    "type": "Feature",
+                    "id": f"rbn:{row.get('id', spotted)}",
+                    "geometry": geometry,
+                    "properties": {
+                        "spotter": row.get("spotter"),
+                        "spotted": spotted,
+                        "frequencyKHz": row.get("frequency"),
+                        "mode": row.get("mode"),
+                        "snrDb": row.get("snr"),
+                        "wpm": row.get("wpm"),
+                        "observedAt": row.get("timestamp"),
+                        "grid": row.get("grid"),
+                        "spotterGrid": row.get("spotter_grid"),
+                        "precision": "reported Maidenhead grid"
+                        if spotter_position
+                        else "spotted-station Maidenhead grid",
+                    },
+                }
+            )
+        return cache.envelope(
+            source="reverse-beacon-network",
+            kind="observation",
+            data={"type": "FeatureCollection", "features": features},
+            attribution="Reverse Beacon Network · via Vail ReRBN",
+            documentation_url="https://www.reversebeacon.net/",
+            data_time=_now_iso(),
+            ttl_seconds=60,
+        )
 
     return await cache.get_or_fetch("radio:rbn:latest", fetch)
 
@@ -391,15 +523,138 @@ async def dx_cluster_spots(client: httpx.AsyncClient) -> dict[str, Any]:
                 p2 = (float(b["lng"]), float(b["lat"]))
             except (KeyError, TypeError, ValueError):
                 continue
-            if not all(math.isfinite(v) for v in (*p1, *p2)) or not (-180 <= p1[0] <= 180 and -90 <= p1[1] <= 90 and -180 <= p2[0] <= 180 and -90 <= p2[1] <= 90):
+            if not all(math.isfinite(v) for v in (*p1, *p2)) or not (
+                -180 <= p1[0] <= 180
+                and -90 <= p1[1] <= 90
+                and -180 <= p2[0] <= 180
+                and -90 <= p2[1] <= 90
+            ):
                 continue
-            features.append({"type": "Feature", "id": f"dx:{spotter}:{spotted}:{row.get('frequency')}:{row.get('when')}", "geometry": {"type": "LineString", "coordinates": [list(p1), list(p2)]}, "properties": {"spotter": spotter, "spotted": spotted, "frequencyKHz": row.get("frequency"), "mode": row.get("mode"), "message": row.get("message"), "observedAt": row.get("when"), "source": row.get("source"), "precision": "DXCC entity centroid estimate"}})
-        return cache.envelope(source="dx-cluster", kind="observation", data={"type": "FeatureCollection", "features": features}, attribution="DX Cluster · via jo30.de DXClusterAPI", documentation_url="https://jo30.de/dxcluster-per-rest-json/", data_time=_now_iso(), ttl_seconds=60)
+            features.append(
+                {
+                    "type": "Feature",
+                    "id": f"dx:{spotter}:{spotted}:{row.get('frequency')}:{row.get('when')}",
+                    "geometry": {"type": "LineString", "coordinates": [list(p1), list(p2)]},
+                    "properties": {
+                        "spotter": spotter,
+                        "spotted": spotted,
+                        "frequencyKHz": row.get("frequency"),
+                        "mode": row.get("mode"),
+                        "message": row.get("message"),
+                        "observedAt": row.get("when"),
+                        "source": row.get("source"),
+                        "precision": "DXCC entity centroid estimate",
+                    },
+                }
+            )
+        return cache.envelope(
+            source="dx-cluster",
+            kind="observation",
+            data={"type": "FeatureCollection", "features": features},
+            attribution="DX Cluster · via jo30.de DXClusterAPI",
+            documentation_url="https://jo30.de/dxcluster-per-rest-json/",
+            data_time=_now_iso(),
+            ttl_seconds=60,
+        )
 
     return await cache.get_or_fetch("radio:dxcluster:latest", fetch)
 
 
-async def pota_spots(client: httpx.AsyncClient, latitude: float, longitude: float) -> dict[str, Any]:
+async def wspr_spots(client: httpx.AsyncClient) -> dict[str, Any]:
+    """Fetch a bounded recent HF/6m WSPR spot sample for global propagation paths."""
+
+    async def fetch() -> dict[str, Any]:
+        query = (
+            "SELECT id, time, band, rx_sign, rx_lat, rx_lon, rx_loc, tx_sign, tx_lat, tx_lon, "
+            "tx_loc, distance, frequency, power, snr FROM wspr.rx "
+            "WHERE time >= now() - INTERVAL 15 MINUTE AND band IN (1, 3, 5, 7, 10, 14, 18, 21, 24, 28, 50) "
+            "ORDER BY time DESC LIMIT 1200 FORMAT JSON"
+        )
+        response = await client.get(WSPR_LIVE, params={"query": query})
+        response.raise_for_status()
+        payload = response.json()
+        rows = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            raise TypeError("wspr.live response has no data rows")
+        features = []
+        times = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            try:
+                tx_lon, tx_lat, rx_lon, rx_lat = (
+                    float(row[key]) for key in ("tx_lon", "tx_lat", "rx_lon", "rx_lat")
+                )
+                distance_km = int(row["distance"])
+                frequency_hz = int(row["frequency"])
+                band_code = int(row["band"])
+                snr_db = int(row["snr"])
+            except (KeyError, TypeError, ValueError, OverflowError):
+                continue
+            if not all(math.isfinite(value) for value in (tx_lon, tx_lat, rx_lon, rx_lat)):
+                continue
+            if not (
+                -180 <= tx_lon <= 180
+                and -90 <= tx_lat <= 90
+                and -180 <= rx_lon <= 180
+                and -90 <= rx_lat <= 90
+            ):
+                continue
+            if distance_km <= 0 or frequency_hz <= 0 or band_code not in WSPR_BANDS:
+                continue
+            tx_sign = str(row.get("tx_sign") or "").strip().upper()
+            rx_sign = str(row.get("rx_sign") or "").strip().upper()
+            if not tx_sign or not rx_sign:
+                continue
+            observed_at = _parse_iso(str(row.get("time") or ""))
+            if not observed_at:
+                continue
+            times.append(observed_at)
+            features.append(
+                {
+                    "type": "Feature",
+                    "id": f"wspr:{row.get('id')}",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[tx_lon, tx_lat], [rx_lon, rx_lat]],
+                    },
+                    "properties": {
+                        "transmitter": tx_sign,
+                        "receiver": rx_sign,
+                        "transmitterLocator": row.get("tx_loc"),
+                        "receiverLocator": row.get("rx_loc"),
+                        "band": WSPR_BANDS[band_code],
+                        "frequencyHz": frequency_hz,
+                        "distanceKm": distance_km,
+                        "powerDbm": row.get("power"),
+                        "snrDb": snr_db,
+                        "observedAt": observed_at,
+                        "precision": "reported Maidenhead locator centers; approximate path",
+                    },
+                }
+            )
+        return cache.envelope(
+            source="wspr-live",
+            kind="observation",
+            data={
+                "type": "FeatureCollection",
+                "features": features,
+                "displayLimit": 1200,
+                "windowMinutes": 15,
+            },
+            attribution="WSPRnet spot data via wspr.live",
+            documentation_url="https://wspr.live/",
+            data_time=max(times, default=None),
+            units={"frequency": "Hz", "distance": "km", "power": "dBm", "snr": "dB"},
+            ttl_seconds=120,
+        )
+
+    return await cache.get_or_fetch("radio:wspr:latest:15m:hf-6m:v1", fetch)
+
+
+async def pota_spots(
+    client: httpx.AsyncClient, latitude: float, longitude: float
+) -> dict[str, Any]:
     async def fetch() -> dict[str, Any]:
         response = await client.get(POTA_SPOTS)
         response.raise_for_status()
@@ -418,13 +673,58 @@ async def pota_spots(client: httpx.AsyncClient, latitude: float, longitude: floa
                 if not position:
                     continue
                 park_lng, park_lat = position
-            if not all(math.isfinite(v) for v in (park_lat, park_lng)) or not (-90 <= park_lat <= 90 and -180 <= park_lng <= 180):
+            if not all(math.isfinite(v) for v in (park_lat, park_lng)) or not (
+                -90 <= park_lat <= 90 and -180 <= park_lng <= 180
+            ):
                 continue
-            spot_id = row.get("spotId") or f"{row.get('activator')}:{row.get('reference')}:{row.get('spotTime')}"
-            common = {"activator": row.get("activator"), "reference": row.get("reference"), "park": row.get("name") or row.get("parkName"), "region": row.get("locationDesc"), "frequencyMHz": row.get("frequency"), "mode": row.get("mode"), "spotter": row.get("spotter"), "comments": row.get("comments"), "source": row.get("source"), "observedAt": row.get("spotTime"), "grid": row.get("grid6") or row.get("grid4"), "precision": "POTA park coordinate" if row.get("latitude") is not None else "Maidenhead grid estimate"}
-            features.append({"type": "Feature", "id": f"pota:{spot_id}:park", "geometry": {"type": "Point", "coordinates": [park_lng, park_lat]}, "properties": common})
-            features.append({"type": "Feature", "id": f"pota:{spot_id}:path", "geometry": {"type": "LineString", "coordinates": [[longitude, latitude], [park_lng, park_lat]]}, "properties": common})
-        return cache.envelope(source="pota", kind="observation", data={"type": "FeatureCollection", "features": features}, attribution="Parks on the Air · active activator spots", documentation_url="https://docs.pota.app/", data_time=_now_iso(), ttl_seconds=60)
+            spot_id = (
+                row.get("spotId")
+                or f"{row.get('activator')}:{row.get('reference')}:{row.get('spotTime')}"
+            )
+            common = {
+                "activator": row.get("activator"),
+                "reference": row.get("reference"),
+                "park": row.get("name") or row.get("parkName"),
+                "region": row.get("locationDesc"),
+                "frequencyMHz": row.get("frequency"),
+                "mode": row.get("mode"),
+                "spotter": row.get("spotter"),
+                "comments": row.get("comments"),
+                "source": row.get("source"),
+                "observedAt": row.get("spotTime"),
+                "grid": row.get("grid6") or row.get("grid4"),
+                "precision": "POTA park coordinate"
+                if row.get("latitude") is not None
+                else "Maidenhead grid estimate",
+            }
+            features.append(
+                {
+                    "type": "Feature",
+                    "id": f"pota:{spot_id}:park",
+                    "geometry": {"type": "Point", "coordinates": [park_lng, park_lat]},
+                    "properties": common,
+                }
+            )
+            features.append(
+                {
+                    "type": "Feature",
+                    "id": f"pota:{spot_id}:path",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[longitude, latitude], [park_lng, park_lat]],
+                    },
+                    "properties": common,
+                }
+            )
+        return cache.envelope(
+            source="pota",
+            kind="observation",
+            data={"type": "FeatureCollection", "features": features},
+            attribution="Parks on the Air · active activator spots",
+            documentation_url="https://docs.pota.app/",
+            data_time=_now_iso(),
+            ttl_seconds=60,
+        )
 
     return await cache.get_or_fetch(f"radio:pota:spots:{latitude:.4f}:{longitude:.4f}", fetch)
 
@@ -446,7 +746,9 @@ async def storm_tracks(client: httpx.AsyncClient) -> dict[str, Any]:
             track_response.raise_for_status()
             try:
                 archive = ZipFile(BytesIO(track_response.content))
-                kml_name = next(name for name in archive.namelist() if name.lower().endswith(".kml"))
+                kml_name = next(
+                    name for name in archive.namelist() if name.lower().endswith(".kml")
+                )
                 root = ET.fromstring(archive.read(kml_name))
             except (OSError, ValueError, StopIteration, ET.ParseError, BadZipFile) as error:
                 raise TypeError("NHC track archive does not contain valid KML") from error
@@ -454,7 +756,14 @@ async def storm_tracks(client: httpx.AsyncClient) -> dict[str, Any]:
             for element in root.iter():
                 if element.tag.rsplit("}", 1)[-1] != "LineString":
                     continue
-                coordinates = next((child.text for child in element.iter() if child.tag.rsplit("}", 1)[-1] == "coordinates" and child.text), None)
+                coordinates = next(
+                    (
+                        child.text
+                        for child in element.iter()
+                        if child.tag.rsplit("}", 1)[-1] == "coordinates" and child.text
+                    ),
+                    None,
+                )
                 if not coordinates:
                     continue
                 points = []
@@ -476,12 +785,41 @@ async def storm_tracks(client: httpx.AsyncClient) -> dict[str, Any]:
                 lat = float(storm["latitudeNumeric"])
             except (KeyError, TypeError, ValueError):
                 continue
-            props = {"name": storm.get("name"), "stormId": storm.get("id"), "classification": storm.get("classification"), "windKnots": int(storm.get("intensity") or 0), "pressureMb": int(storm.get("pressure") or 0), "observedAt": storm.get("lastUpdate"), "forecastUrl": track_url, "precision": "NHC advisory track"}
-            features.extend([
-                {"type": "Feature", "id": f"nhc-track:{storm.get('id')}", "geometry": {"type": "LineString", "coordinates": lines[0]}, "properties": props},
-                {"type": "Feature", "id": f"nhc-center:{storm.get('id')}", "geometry": {"type": "Point", "coordinates": [lon, lat]}, "properties": props},
-            ])
-        return cache.envelope(source="noaa-nhc", kind="forecast", data={"type": "FeatureCollection", "features": features}, attribution="NOAA National Hurricane Center", documentation_url="https://www.nhc.noaa.gov/gis/", data_time=_now_iso(), ttl_seconds=300)
+            props = {
+                "name": storm.get("name"),
+                "stormId": storm.get("id"),
+                "classification": storm.get("classification"),
+                "windKnots": int(storm.get("intensity") or 0),
+                "pressureMb": int(storm.get("pressure") or 0),
+                "observedAt": storm.get("lastUpdate"),
+                "forecastUrl": track_url,
+                "precision": "NHC advisory track",
+            }
+            features.extend(
+                [
+                    {
+                        "type": "Feature",
+                        "id": f"nhc-track:{storm.get('id')}",
+                        "geometry": {"type": "LineString", "coordinates": lines[0]},
+                        "properties": props,
+                    },
+                    {
+                        "type": "Feature",
+                        "id": f"nhc-center:{storm.get('id')}",
+                        "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                        "properties": props,
+                    },
+                ]
+            )
+        return cache.envelope(
+            source="noaa-nhc",
+            kind="forecast",
+            data={"type": "FeatureCollection", "features": features},
+            attribution="NOAA National Hurricane Center",
+            documentation_url="https://www.nhc.noaa.gov/gis/",
+            data_time=_now_iso(),
+            ttl_seconds=300,
+        )
 
     return await cache.get_or_fetch("noaa:nhc:storm-tracks", fetch)
 
@@ -504,11 +842,13 @@ async def aurora(client: httpx.AsyncClient) -> dict[str, Any]:
                 continue
             if probability <= 0:
                 continue
-            features.append({
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [lon, lat]},
-                "properties": {"probability": probability, "units": "%"},
-            })
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                    "properties": {"probability": probability, "units": "%"},
+                }
+            )
         data = {
             "type": "FeatureCollection",
             "features": features,
@@ -576,7 +916,9 @@ def _tle_epoch(line1: str) -> str | None:
         return None
 
 
-def _teme_to_geodetic(position: tuple[float, float, float], julian_date: float) -> tuple[float, float, float]:
+def _teme_to_geodetic(
+    position: tuple[float, float, float], julian_date: float
+) -> tuple[float, float, float]:
     x, y, z = position
     theta = gstime(julian_date)
     cos_theta, sin_theta = math.cos(theta), math.sin(theta)
@@ -605,7 +947,11 @@ def _teme_to_geodetic(position: tuple[float, float, float], julian_date: float) 
 def _satellite_position(satellite: Satrec, when: datetime) -> tuple[float, float, float] | None:
     moment = when.astimezone(UTC)
     jd, fraction = jday(
-        moment.year, moment.month, moment.day, moment.hour, moment.minute,
+        moment.year,
+        moment.month,
+        moment.day,
+        moment.hour,
+        moment.minute,
         moment.second + moment.microsecond / 1_000_000,
     )
     error, position, _ = satellite.sgp4(jd, fraction)
@@ -648,7 +994,13 @@ async def satellite_track(client: httpx.AsyncClient, catalog_id: int) -> dict[st
         return cache.envelope(
             source="celestrak-gp",
             kind="model",
-            data={"name": name, "catalogId": catalog_id, "line1": line1, "line2": line2, "epoch": epoch},
+            data={
+                "name": name,
+                "catalogId": catalog_id,
+                "line1": line1,
+                "line2": line2,
+                "epoch": epoch,
+            },
             attribution="Orbital elements from CelesTrak GP data; positions propagated locally with SGP4.",
             documentation_url="https://celestrak.org/NORAD/documentation/gp-data-formats.php",
             data_time=epoch,
@@ -668,20 +1020,31 @@ async def satellite_track(client: httpx.AsyncClient, catalog_id: int) -> dict[st
         if position is not None:
             points.append([position[0], position[1]])
     line_parts = _split_dateline(points)
-    features = [{
-        "type": "Feature",
-        "geometry": {"type": "Point", "coordinates": [current[0], current[1]]},
-        "properties": {
-            "role": "current-position", "name": elements["name"], "catalogId": catalog_id,
-            "epoch": elements["epoch"], "altitudeKm": round(current[2], 2),
-        },
-    }]
-    if line_parts:
-        features.append({
+    features = [
+        {
             "type": "Feature",
-            "geometry": {"type": "MultiLineString", "coordinates": line_parts},
-            "properties": {"role": "ground-track", "name": elements["name"], "catalogId": catalog_id},
-        })
+            "geometry": {"type": "Point", "coordinates": [current[0], current[1]]},
+            "properties": {
+                "role": "current-position",
+                "name": elements["name"],
+                "catalogId": catalog_id,
+                "epoch": elements["epoch"],
+                "altitudeKm": round(current[2], 2),
+            },
+        }
+    ]
+    if line_parts:
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "MultiLineString", "coordinates": line_parts},
+                "properties": {
+                    "role": "ground-track",
+                    "name": elements["name"],
+                    "catalogId": catalog_id,
+                },
+            }
+        )
     result = cache.envelope(
         source="celestrak-gp",
         kind="model",
@@ -700,11 +1063,16 @@ async def satellite_track(client: httpx.AsyncClient, catalog_id: int) -> dict[st
 
 async def goes_satellite_tracks(client: httpx.AsyncClient) -> dict[str, Any]:
     async def fetch() -> dict[str, Any]:
-        tracks = await asyncio.gather(*(satellite_track(client, catalog_id) for catalog_id in GOES_CATALOG_IDS.values()))
+        tracks = await asyncio.gather(
+            *(satellite_track(client, catalog_id) for catalog_id in GOES_CATALOG_IDS.values())
+        )
         features = []
         for (platform, catalog_id), track in zip(GOES_CATALOG_IDS.items(), tracks, strict=True):
             for feature in track["data"]["features"]:
-                feature = {**feature, "id": f"goes:{catalog_id}:{feature['properties'].get('role')}"}
+                feature = {
+                    **feature,
+                    "id": f"goes:{catalog_id}:{feature['properties'].get('role')}",
+                }
                 feature["properties"] = {
                     **feature["properties"],
                     "platform": platform,
@@ -720,7 +1088,9 @@ async def goes_satellite_tracks(client: httpx.AsyncClient) -> dict[str, Any]:
             data={"type": "FeatureCollection", "features": features},
             attribution="GOES orbital elements from CelesTrak; NOAA GOES ABI GeoColor imagery is served by NASA GIBS.",
             documentation_url="https://celestrak.org/norad/elements/table.php?FORMAT=tle&GROUP=goes",
-            data_time=max((track["dataTime"] for track in tracks if track.get("dataTime")), default=None),
+            data_time=max(
+                (track["dataTime"] for track in tracks if track.get("dataTime")), default=None
+            ),
             valid_from=_now_iso(),
             ttl_seconds=30,
         )

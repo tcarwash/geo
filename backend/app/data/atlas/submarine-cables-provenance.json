@@ -1,0 +1,9 @@
+{
+  "source": "https://qlever.dev/api/osm-planet",
+  "query": "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:> SELECT ?way ?name ?operator ?geometry WHERE { ?way osmkey:submarine \"yes\"; osmkey:communication \"line\"; geo:hasGeometry/geo:asWKT ?geometry . OPTIONAL { ?way osmkey:name ?name } OPTIONAL { ?way osmkey:operator ?operator } }",
+  "databaseSnapshot": "OpenStreetMap, PBF from https://planet.openstreetmap.org/pbf/planet-260921.osm.pbf, converted to RDF TTL and enhanced by DE-9IM triples using osm2rdf",
+  "rawSha256": "ce1e5885869b39206a87c9734589da32a535e03f4cc50b984852f4890240b632",
+  "retrievedAt": "2026-10-11T22:34:26.747078+00:00",
+  "transformations": "Deduplicate OSM ways, round coordinates to four decimals, split at date line",
+  "license": "ODbL 1.0"
+}

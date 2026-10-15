@@ -1,3 +1,4 @@
+import {ADDITIONAL_LAYERS} from './additionalLayers.js';
 import {BASE_MAPS} from './baseMaps.js';
 import {imageryDate,yesterday} from './imagery.js';
 export const RAD = Math.PI / 180;
@@ -22,6 +23,10 @@ export const dateLabel = date => new Intl.DateTimeFormat('en-GB',{day:'2-digit',
 export const timeLabel = (date,zone='UTC',seconds=false) => new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',...(seconds?{second:'2-digit'}:{}),hour12:false,timeZone:zone}).format(date);
 export function ageLabel(value) { if(!value)return 'Time unavailable'; const n=Math.max(0,Math.floor((Date.now()-new Date(value).getTime())/60000));return n<1?'Just now':n<60?`${n} min ago`:n<1440?`${Math.floor(n/60)} hr ago`:`${Math.floor(n/1440)} days ago`; }
 export const LAYERS = [
+ ...ADDITIONAL_LAYERS,
+ {id:'air-traffic',name:'Air traffic',subtitle:'ADSB.lol · regional live positions',icon:'Plane',color:'#f1c779',on:false,opacity:.95},
+ {id:'air-routes',name:'Air routes · 2014',subtitle:'OpenFlights · historical global connections',icon:'Route',color:'#8bcce5',on:false,opacity:.6},
+ {id:'sea-routes',name:'Sea routes',subtitle:'Global shipping corridors · 2012 reference',icon:'Ship',color:'#74cdbb',on:false,opacity:.8},
  {id:'imagery',name:'Satellite true color',subtitle:'NASA GIBS · dated imagery',icon:'Layers3',color:'#84cfce',on:false,opacity:.7,date:yesterday()},
  {id:'night',name:'Day & night',subtitle:'Solar terminator · computed',icon:'Sun',color:'#e1c77a',on:true,opacity:.78},
  {id:'graticule',name:'Geographic grid',subtitle:'Latitude & longitude · reference',icon:'Grid3X3',color:'#89b3bc',on:true,opacity:.28},
@@ -50,6 +55,7 @@ export const LAYERS = [
  {id:'pskreporter',name:'PSK Reporter paths',subtitle:'Your transmissions · receiver grids',icon:'RadioTower',color:'#77d9c4',on:false,opacity:.8},
  {id:'rbn',name:'Reverse Beacon Network',subtitle:'RBN · spotter and station grids',icon:'Activity',color:'#eed275',on:false,opacity:.85},
  {id:'dx-cluster',name:'DX Cluster paths',subtitle:'DX Cluster · country-centroid estimates',icon:'Radio',color:'#c6a4ed',on:false,opacity:.8},
+ {id:'wspr',name:'WSPR propagation paths',subtitle:'WSPRnet · recent HF and 6 m spots',icon:'RadioTower',color:'#8fd4ed',on:false,opacity:.65},
  {id:'pota',name:'Parks on the Air spots',subtitle:'POTA · activator parks and paths from your station',icon:'MapPin',color:'#a6d879',on:false,opacity:.82},
  {id:'wsjtx',name:'WSJT-X heard stations',subtitle:'WSJT-X · local UDP decoded messages',icon:'RadioTower',color:'#70cdb8',on:false,opacity:.9},
  {id:'cq-zones',name:'CQ zones',subtitle:'Amateur radio · CQ World Wide zones',icon:'Grid3X3',color:'#76c7d4',on:false,opacity:.22},
