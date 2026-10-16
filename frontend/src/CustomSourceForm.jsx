@@ -18,4 +18,3 @@ export default function CustomSourceForm({onAdd,onError,disabled,privateOnly=fal
   <p className="muted">Use sources you have permission to display. Tile requests go directly to the provider. WMS uses Web Mercator and version 1.1.1. Public endpoints only; credentials are not supported in source URLs.</p><button className="primary" disabled={disabled||privateOnly&&form.kind==='push'} type="submit">Add source</button>
  </form></details>
  }
-}
