@@ -2,6 +2,10 @@
 
 The desktop package wraps the existing Geo app; it does not fork the frontend or data logic. Electron opens the same Vite build used by the web deployment and starts the same FastAPI application as a private, single-user local service. The backend serves the built frontend and API from one loopback origin. SQLite lives in Electron's per-user application-data directory. Redis is disabled for this one-process install.
 
+## Application icon
+
+The application icon is derived from the repository’s `icon2.png`. The committed `assets/icon.png`, `assets/icon.ico`, and `assets/icon.icns` cover the Electron window, Linux launcher, Windows executable/installer, and macOS app bundle. The browser uses `frontend/public/favicon.png` from the same source. Rebuild and reinstall packages to update installed application icons.
+
 ## Local development
 
 From the repository root:

@@ -92,6 +92,7 @@ async function createWindow(origin) {
     minHeight: 560,
     show: false,
     autoHideMenuBar: true,
+    icon: path.join(__dirname, 'assets/icon.png'),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

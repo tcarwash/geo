@@ -142,8 +142,8 @@ input::placeholder,textarea::placeholder{color:#8c9faa}
 .chron-legend span{display:flex;align-items:center;gap:6px}
 .chron-legend i{display:inline-block;width:12px;height:12px;border:1px solid #e0e7e555;border-radius:2px}
 .chron-day-swatch{background:#3f89a3}.chron-gray-swatch{background:#c0a4c8}.chron-night-swatch{background:#061421}
-.chron-exit{right:22px;bottom:22px;min-height:44px}
-.chron-mode.presentation-hidden .chron-live,.chron-mode.presentation-hidden .chron-legend,.chron-mode.presentation-hidden .chron-exit{opacity:0;pointer-events:none}
+.chron-actions{position:absolute;z-index:790;right:22px;bottom:22px;display:flex;gap:8px}.chron-actions button{min-height:44px}.chron-actions .chron-exit{position:static}
+.chron-mode.presentation-hidden .chron-live,.chron-mode.presentation-hidden .chron-legend,.chron-mode.presentation-hidden .chron-actions{opacity:0;pointer-events:none}
 .date-line-label{display:flex;align-items:center;justify-content:center;background:#101f2ab8;border:1px solid #e0c77f70;border-radius:3px;color:#f0d98c;font-size:8px;letter-spacing:1px;text-shadow:0 1px 2px #000;white-space:nowrap}
 .chron-mode .top-context{display:none}
 .chron-clock-time-scale{top:45px;height:49px;z-index:779;color:#fff1d6;background:linear-gradient(#382b21ed,#382b21c9 74%,#382b2108)}
@@ -185,7 +185,7 @@ input::placeholder,textarea::placeholder{color:#8c9faa}
 .stale-data-panel li strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 .stale-data-panel li>span{color:#e2cf9d;font-size:10px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .stale-data-panel li small{grid-column:1/-1;color:var(--muted);font-size:10px;line-height:1.45}
-@media(max-width:600px){.chron-live{left:12px;bottom:75px;padding:8px 52px 8px 10px}.chron-mode .chron-live{width:min(250px,calc(100vw - 150px))}.chron-mode .chron-controls-toggle{width:34px;height:34px;min-height:34px}.chron-legend{bottom:12px;gap:8px;padding:8px;font-size:9px}.chron-legend i{width:10px;height:10px}.chron-exit{right:12px;bottom:75px;min-height:42px;padding:8px 10px}.chron-hour-label{font-size:10px}.chron-hour-label small{font-size:6px}}
+@media(max-width:600px){.chron-live{left:12px;bottom:75px;padding:8px 52px 8px 10px}.chron-mode .chron-live{width:min(250px,calc(100vw - 150px))}.chron-mode .chron-controls-toggle{width:34px;height:34px;min-height:34px}.chron-legend{bottom:12px;gap:8px;padding:8px;font-size:9px}.chron-legend i{width:10px;height:10px}.chron-actions{right:12px;bottom:75px;flex-direction:column;gap:6px}.chron-actions button{min-height:42px;padding:8px 10px}.chron-hour-label{font-size:10px}.chron-hour-label small{font-size:6px}}
 
 .glyph-aircraft{color:#f1c779}.glyph-aircraft span{display:flex}.glyph-aircraft svg{width:22px;height:22px}
 

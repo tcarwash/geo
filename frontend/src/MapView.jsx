@@ -69,8 +69,16 @@ export default forwardRef(function MapView({state,feeds,time,locked,chronMode=fa
  },[]);
  useEffect(()=>{const m=map.current;if(!m)return;
   const setInteractions=enabled=>['dragging','scrollWheelZoom','doubleClickZoom','touchZoom','boxZoom','keyboard','tap'].forEach(name=>{const handler=m[name];if(handler?.[enabled?'enable':'disable'])handler[enabled?'enable':'disable']()});
+  m.stop();
   if(chronMode){priorView.current={center:[m.getCenter().lat,m.getCenter().lng],zoom:m.getZoom()};m.setMinZoom(.25);setInteractions(false);}
-  else{setInteractions(true);m.setMinZoom(Math.min(8,minimumVerticalMapZoom(m.getSize().y)));if(priorView.current){m.setView(priorView.current.center,priorView.current.zoom,{animate:false});priorView.current=null;}}
+  else{
+   // Raising minZoom at Chron's zoom can start a delayed Leaflet animation
+   // that overwrites the restored view. Restore first, without animation.
+   const minZoom=Math.min(8,minimumVerticalMapZoom(m.getSize().y)),saved=priorView.current;
+   priorView.current=null;
+   m.setView(saved?.center||m.getCenter(),Math.max(saved?.zoom??m.getZoom(),minZoom),{animate:false});
+   m.setMinZoom(minZoom);setInteractions(true);
+  }
   },[chronMode]);
   useEffect(()=>{
    const m=map.current,container=element.current;if(!m||!container)return;
