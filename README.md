@@ -1,46 +1,64 @@
 # Geo
 
-Geo is a self-hosted, large-display living atlas: a world map, UTC clock, live geospatial layers, and configurable instruments in one map-first interface.
+Geo is a living world atlas for your desktop or a self-hosted browser display. It combines an interactive map, UTC and world clocks, weather and space-weather overlays, satellite tracking, and amateur-radio activity. Customize the display with layers, widgets, annotations, and saved layouts.
 
 ![Geo living atlas example](example.png)
 
-Product direction and implementation details: [project specification](PROJECT_SPEC.md), [data sources](data.md), [visual style guide](STYLE_GUIDE.md), and [capability status](CAPABILITIES.md).
+## Install
 
-## Current implementation
+### Desktop app
 
-The Python backend is in [backend/](backend/README.md). It provides revisioned shared layouts/settings/drawings, ADIF contact import and filters, and normalized USGS, NASA EONET, NOAA SWPC, CelesTrak, and amateur-radio spotting feeds. Run it with Docker Compose:
+Download the package for your operating system from [GitHub Releases](https://github.com/tcarwash/geo/releases):
+
+- **Windows:** run the setup executable.
+- **macOS:** open the DMG and drag Geo into Applications.
+- **Linux:** install the DEB package, or extract the ZIP and run `geo`.
+
+The desktop app runs its own local service; Docker and a separate server are not required. Settings and saved data stay in the application's per-user data directory. See the [desktop guide](desktop/README.md) to build from source.
+
+### Self-host with Docker Compose
+
+Install Git and Docker with the Compose plugin, then run:
 
 ```sh
+git clone https://github.com/tcarwash/geo.git
+cd geo
 cp .env.example .env
 docker compose up -d --build
 ```
 
-By default the API is available at `http://127.0.0.1:8081`; `/healthz` checks storage and `/docs` lists the API. The React/Leaflet atlas and bundled Natural Earth map are available at `http://127.0.0.1:8082`. See [backend/README.md](backend/README.md) for endpoint, persistence, backup, and access details.
+Open **http://127.0.0.1:8082** on the host. Edit `.env` to change ports or deployment settings, then rerun `docker compose up -d --build` to apply them.
 
-See [CAPABILITIES.md](CAPABILITIES.md) for what is implemented, tested, runtime checked, and still deferred.
+For access from other machines on your trusted LAN, set `GEO_WEB_BIND` to the host's LAN address. Keep the API bound to loopback; the web service forwards API requests for browsers. For an internet-facing display, use `GEO_DEPLOYMENT_MODE=public` behind a TLS reverse proxy. See the [deployment guide](backend/README.md#publicshared-large-display-deployment) for proxy and access configuration.
 
-## Frontend development
+Docker stores saved layouts, annotations, imported contacts, and cached data in the `geo-data` volume. Preserve this volume when updating. See the [backend guide](backend/README.md#run-with-docker-compose) for backup and restore commands.
 
-Run `cd frontend && npm ci && npm run dev`, then open http://localhost:5173. Vite proxies API requests to port 8081. Use `npm run build` for production assets and `npm run check` for solar, locator, and layout checks. Compose packages the frontend with same-origin API routing; configure `GEO_WEB_BIND` and `GEO_WEB_PORT` for your reverse proxy.
+To update:
 
-Current view autosaves in browser storage. Named layouts save to SQLite with revision conflict detection and include annotations and widget positions. Settings accepts an optional edit token kept in session memory. Escape closes panels and cancels drawing. Solar simulation changes shading only. Iframe destinations must permit embedding.
+```sh
+git pull
+docker compose up -d --build
+```
 
-A space-weather widget displays NOAA SWPC Kp observations with timestamps and source status. World clocks and clock widgets offer timezone controls. Widgets support arrow-key movement and Shift+arrow resizing; mobile uses a scrollable stack. Imported layout values are normalized before rendering. Browser smoke checks cover desktop/touch layer-browser flows and source-layer rendering; physical-device and long-duration display testing remain outstanding. NASA MODIS Terra true-color imagery is available as a dated overlay; it is not instantaneous cloud cover.
+## Set up your display
 
-`geo.ag7su.com` is explicitly allowed by Vite development and preview servers. `https://geo.ag7su.com` is included in the API CORS configuration. The production Nginx frontend accepts this Host header and proxies API requests on the same origin. Apply changed API environment settings on the next container recreation. DNS, TLS, and HAProxy routing remain host configuration.
+1. Open **Settings** to set your station name, callsign, coordinates, and world-clock timezones.
+2. Open **Layers** to choose a base map and enable overlays. Layer details show the source, timestamps, coverage, and any limitations; use opacity controls to combine overlays.
+3. Add clocks, notes, station information, a space-weather panel, a layer legend, or an embedded dashboard through **Widgets**. Use **Draw** for map annotations.
+4. Save a named view under **Layouts**. Export/import a layout to move it between installations or browser profiles.
 
-Fullscreen hides controls after six seconds; pointer or keyboard input reveals them. Editing handles are suppressed while fullscreen. Station and subsolar positions are marked on the atlas. Drawing tools offer names, colors, and undo for map edits in the current session. Radio logs draw up to 250 great-circle contact paths, split at the date line; contact queries show up to 1,000 records.
+The current view saves automatically in your browser. In desktop and private server mode, named layouts and saved annotations persist in the local service. In public mode, each browser keeps its own setup; shared writes, imported contacts, and personalized/local radio feeds are disabled.
 
-Layers → Add a custom source supports public XYZ templates, WMS overlays, and imported GeoJSON files. Enter attribution; WMS uses EPSG:3857 and version 1.1.1. Custom source definitions are saved with layouts. Credential URLs are rejected. [Frontend extension guide](frontend/EXTENDING.md) documents the lifecycle and source limits.
+### WSJT-X
 
-Provider updates reconcile existing feature and tile layers. ISS positions move on the existing SVG marker, with a short transition that respects reduced motion. Opacity and order changes retain loaded tile resources; solar shading repaints its existing canvases. A changed imagery date or source URL replaces only that source. MODIS Terra single-day imagery can contain equatorial swath gaps; those are missing observations rather than complete daily global coverage.
+In desktop or private server mode, enable UDP reporting in WSJT-X and send it to `127.0.0.1:2237`, then enable the **WSJT-X heard stations** layer in Geo. Geo maps recent decodes with reported Maidenhead grids. For a separate WSJT-X machine or a different UDP port, see the [local adapter setup](backend/README.md#run-with-docker-compose).
 
-Selectable bases: Political Atlas, Grayscale, NASA Blue Marble Relief, and NASA Blue Marble imagery. The latter two are static composites and require provider access. Switching bases retains the view and overlays. Vite hot reload is disabled for stable display use; refresh once after development code changes. Production static asset publication does not force open displays to reload.
+## Using Geo
 
-The map repeats horizontally at the date line, keeping its geographic scale consistent on wide and fullscreen displays. The bundled atlas, labels, live features, annotations, and user GeoJSON render aligned copies; raster tile sources wrap at their native world boundary. The Maidenhead overlay updates visible cells on Leaflet move/zoom/resize events without rebuilding other layers.
+- **Explore:** drag to pan, zoom with the map controls, and select map features for details. Use Go to for countries, coordinates, or Maidenhead locators; Return to station recenters the map.
+- **Display mode:** hides editing controls for a dedicated map display. Fullscreen hides controls after six seconds; pointer or keyboard input reveals them.
+- **Chron mode:** shows a solar-time ruler, centered noon meridian, and day/night grayline. Drag vertically to pan; horizontal movement follows solar time. Select a world clock to add its civil-time ruler. The UTC card opens Layers/Settings, and the fullscreen and Exit Chron buttons sit at the lower right.
+- **Custom sources:** Layers → Add a custom source accepts XYZ tiles, WMS overlays, and GeoJSON files. Private mode also supports API-pushed GeoJSON.
+- **Keyboard:** `G` opens Go to, `L` opens Layers, and `Esc` closes panels or exits Chron mode. Selected widgets move with arrow keys and resize with Shift+arrow keys.
 
-Global natural-event layers include NASA EONET active wildfires, volcanic activity, floods, and severe storms. Their GeoJSON includes event details and source links; active events refresh through the backend cache.
-
-Additional overlays include NOAA WAM-IPE global MUF forecast imagery, prop.kc2g.com's ionosonde-derived 3000 km MUF map, NASA GIBS GOES-East/West GeoColor, a white cloud mask from GOES ABI and Himawari AHI imagery (every 10 minutes), and a separate EUMETSAT Geostationary Ring IR10.8 μm multimission composite (about every three hours). The EUMETSAT view is cohesive and near-global, with gaps toward the poles. NOAA SWPC D-RAP provides a map-aligned estimate of HF frequencies experiencing at least 1 dB absorption, refreshed every minute. NASA GPM IMERG provides a global 30-minute precipitation-rate estimate. NOAA nowCOAST supplies 15-minute lightning strike density, and NOAA NHC supplies tropical-storm forecast tracks. An optional GOES-18/19 position layer displays current subsatellite points and short ground tracks. Radio layers show PSK Reporter reception paths from the configured station callsign, Reverse Beacon Network spots, and DX-cluster spots. PSK Reporter and RBN paths use published Maidenhead grids where available; DX-cluster paths are approximate DXCC country-centroid connections and are labeled as such. Configure the station callsign and coordinates in Settings to use PSK Reporter.
-
-The pointer coordinate readout is rate-limited to 12 updates per second and ignores changes below its displayed precision, keeping pointer movement from rerendering the full interface unnecessarily.
+The bundled political atlas works without a network connection in the desktop app. Live feeds and remote imagery require internet access; browser reloads while offline are not guaranteed. Layers can be observations, forecasts, static references, or historical datasets. Check their timestamps and source notes; Geo is an informational display, not a navigation or emergency-warning system. See the [data-source guide](data.md) for provider coverage and terms.
