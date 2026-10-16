@@ -302,6 +302,115 @@ def test_edit_token_protects_writes(client: TestClient, monkeypatch: pytest.Monk
     assert allowed.status_code == 201
 
 
+def test_local_source_push_publishes_latest_geojson_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(db, "settings", replace(db.settings, database_path=tmp_path / "local-source.sqlite3"))
+    class FakeTransport:
+        def get_extra_info(self, _name):
+            return ("127.0.0.1", 0)
+
+        def close(self):
+            pass
+
+    async def no_udp_listener(*_args, **_kwargs):
+        return FakeTransport(), None
+
+    monkeypatch.setattr(api.asyncio.BaseEventLoop, "create_datagram_endpoint", no_udp_listener)
+    source_id = "custom-radio-sites"
+    collection = {
+        "type": "FeatureCollection",
+        "features": [{
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [-122.33, 47.61]},
+            "properties": {"name": "Seattle site", "category": "repeater"},
+        }],
+    }
+
+    with TestClient(app) as client:
+        pushed = client.post(f"/api/v1/local-sources/{source_id}/data", json=collection)
+        assert pushed.status_code == 200
+        assert pushed.json()["data"] == collection
+        assert pushed.json()["source"] == f"local:{source_id}"
+        assert pushed.json()["status"] == "current"
+
+        latest = client.get(f"/api/v1/local-sources/{source_id}")
+        assert latest.status_code == 200
+        assert latest.json()["data"] == collection
+
+        with db.connection() as conn:
+            conn.execute("UPDATE local_source_data SET updated_at='2000-01-01T00:00:00Z' WHERE source_id=?", (source_id,))
+        stale = client.get(f"/api/v1/local-sources/{source_id}")
+        assert stale.json()["status"] == "stale"
+        assert stale.json()["staleReason"]
+
+        cleared = client.delete(f"/api/v1/local-sources/{source_id}/data")
+        assert cleared.status_code == 204
+        waiting = client.get(f"/api/v1/local-sources/{source_id}")
+        assert waiting.json()["status"] == "waiting"
+
+
+def test_local_source_push_uses_edit_auth_and_rejects_public_mode(public_client: TestClient):
+    collection = {"type": "FeatureCollection", "features": []}
+    response = public_client.post("/api/v1/local-sources/custom-demo/data", json=collection)
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "public_read_only"
+
+
+def test_local_source_push_requires_the_configured_edit_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(db, "settings", replace(db.settings, database_path=tmp_path / "local-source-auth.sqlite3"))
+    monkeypatch.setenv("GEO_EDIT_TOKEN", "local-source-test-token")
+
+    class FakeTransport:
+        def get_extra_info(self, _name):
+            return ("127.0.0.1", 0)
+
+        def close(self):
+            pass
+
+    async def no_udp_listener(*_args, **_kwargs):
+        return FakeTransport(), None
+
+    monkeypatch.setattr(api.asyncio.BaseEventLoop, "create_datagram_endpoint", no_udp_listener)
+    payload = {"type": "FeatureCollection", "features": []}
+    with TestClient(app) as client:
+        denied = client.post("/api/v1/local-sources/token-test/data", json=payload)
+        assert denied.status_code == 401
+        allowed = client.post(
+            "/api/v1/local-sources/token-test/data",
+            headers={"X-Geo-Edit-Token": "local-source-test-token"},
+            json=payload,
+        )
+        assert allowed.status_code == 200
+
+
+def test_local_source_push_validates_ids_geometry_and_instance_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(db, "settings", replace(db.settings, database_path=tmp_path / "local-source-limits.sqlite3"))
+
+    class FakeTransport:
+        def get_extra_info(self, _name):
+            return ("127.0.0.1", 0)
+
+        def close(self):
+            pass
+
+    async def no_udp_listener(*_args, **_kwargs):
+        return FakeTransport(), None
+
+    monkeypatch.setattr(api.asyncio.BaseEventLoop, "create_datagram_endpoint", no_udp_listener)
+    payload = {"type": "FeatureCollection", "features": []}
+    invalid_geometry = {
+        "type": "FeatureCollection",
+        "features": [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [181, 0]}, "properties": {}}],
+    }
+    with TestClient(app) as client:
+        assert client.get("/api/v1/local-sources/Uppercase").status_code == 422
+        assert client.post("/api/v1/local-sources/valid-id/data", json=invalid_geometry).status_code == 422
+        for index in range(8):
+            assert client.post(f"/api/v1/local-sources/source-{index}/data", json=payload).status_code == 200
+        limited = client.post("/api/v1/local-sources/source-overflow/data", json=payload)
+        assert limited.status_code == 409
+        assert limited.json()["detail"]["code"] == "local_source_limit"
+
+
 def test_adif_import_filters_contacts_and_marks_unknown_locations(client: TestClient):
     source = (
         "<ADIF_VER:3>3.1<STATION_CALLSIGN:6>N0CALL<EOH>"
@@ -361,7 +470,7 @@ def test_database_migration_adds_layout_schema_version_and_keeps_saved_data(tmp_
     assert row["state_json"] == '{"zoom":2}'
     assert row["revision"] == 4
     assert row["schema_version"] == 1
-    assert versions == [1, 2, 3]
+    assert versions == [1, 2, 3, 4]
 
 
 @pytest.mark.asyncio

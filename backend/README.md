@@ -53,9 +53,29 @@ All routes are under `/api/v1` except `/healthz` and FastAPI's `/docs`.
 | `GET /goes-satellites` | Current GOES-19/East and GOES-18/West subsatellite points plus short SGP4 ground tracks |
 | `POST /adif/import?filename=log.adi&replace_existing=false` | Import UTF-8 ADIF text in the raw request body; stores parsed contacts and counts unresolved grids |
 | `GET /adif/contacts?band=20m&mode=FT8&after=...&before=...` | Filter/paginate stored contacts and return their GeoJSON point features |
+| `POST /local-sources/{source_id}/data` | Push a complete GeoJSON FeatureCollection snapshot into a private local source; replaces the prior snapshot |
+| `GET /local-sources/{source_id}` | Read a local source snapshot and its waiting/current/stale status |
+| `DELETE /local-sources/{source_id}/data` | Clear a stored local-source snapshot |
 | `GET /layouts`, `POST /layouts`, `GET/PUT/DELETE /layouts/{id}` | Shared revisioned layouts; writes use `If-Match: "revision"` |
 | `GET/PUT /drawings` | Shared GeoJSON FeatureCollection with geometry, coordinate, count, and size validation; first write uses `If-Match: "0"` |
 | `GET/PUT /settings` | Shared non-secret display settings with revision protection; first write uses `If-Match: "0"` |
+
+### Pushed local GeoJSON sources
+
+In private mode, open Layers → Add a custom source → API-pushed GeoJSON. Choose a stable source ID (lowercase letters, numbers, and hyphens; up to 48 characters) and a display name, then add it. Geo shows the POST endpoint in that layer's details and polls its snapshot while the layer is enabled. It stores the latest full snapshot in SQLite; a source becomes stale after five minutes without a new push. Clearing the server snapshot frees its slot but leaves the layer configuration in the current view. Removing the layer from a view does not delete the stored snapshot.
+
+Push a complete FeatureCollection; each request replaces the preceding snapshot. The API accepts WGS84 GeoJSON Point, MultiPoint, LineString, MultiLineString, Polygon, and MultiPolygon features, up to 5,000 features and 5 MB. A private instance holds at most eight source snapshots. Public deployment mode rejects local-source access and writes. Set `GEO_EDIT_TOKEN` to require the `X-Geo-Edit-Token` header; the token is never part of the URL or saved layout. Keep the API on loopback or a trusted LAN/VPN and do not expose it directly to the public internet.
+
+Example (replace the URL, ID, and token with your instance settings; omit the header only when the private instance intentionally has no edit token):
+
+```sh
+curl -X POST http://127.0.0.1:8081/api/v1/local-sources/radio-sites/data \\
+  -H 'Content-Type: application/json' \\
+  -H 'X-Geo-Edit-Token: YOUR_EDIT_TOKEN' \\
+  --data-binary @sites.geojson
+```
+
+For file-based custom sources, use the same Add a custom source flow and choose GeoJSON file (up to 2 MB). XYZ tiles and WMS overlays are also configurable there; source URLs must be public HTTP(S) URLs without credentials. Feature/label colors, label property and size, point radius, line width, polygon fill, visibility, and opacity are configurable for GeoJSON layers. The existing point-label layers also expose text and background colors plus text size.
 
 Provider responses use the envelope in `PROJECT_SPEC.md`: source, observation/forecast kind, source/data time, fetch/expiry time, status, attribution, units, and data. Upstream requests are restricted to fixed provider URLs; there is no arbitrary URL proxy. Provider errors are sanitized for clients and the last valid cache entry is returned as stale when an upstream refresh fails. When an expired cache entry exists, it is served immediately as stale while a deduplicated background refresh runs; a cold cache with no previous response still waits for its initial fetch.
 

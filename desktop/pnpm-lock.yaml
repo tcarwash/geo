@@ -26,6 +26,9 @@ importers:
       electron:
         specifier: 44.7.2
         version: 44.7.2
+      glob:
+        specifier: 7.2.3
+        version: 7.2.3
 
 packages:
 
@@ -1259,8 +1262,7 @@ snapshots:
 
   auto-bind@5.0.1: {}
 
-  balanced-match@1.0.2:
-    optional: true
+  balanced-match@1.0.2: {}
 
   balanced-match@4.0.4: {}
 
@@ -1280,7 +1282,6 @@ snapshots:
     dependencies:
       balanced-match: 1.0.2
       concat-map: 0.0.1
-    optional: true
 
   brace-expansion@5.0.12:
     dependencies:
@@ -1328,8 +1329,7 @@ snapshots:
 
   commander@9.5.0: {}
 
-  concat-map@0.0.1:
-    optional: true
+  concat-map@0.0.1: {}
 
   convert-to-spaces@2.0.1: {}
 
@@ -1516,8 +1516,7 @@ snapshots:
   fs-xattr@0.3.1:
     optional: true
 
-  fs.realpath@1.0.0:
-    optional: true
+  fs.realpath@1.0.0: {}
 
   galactus@2.0.2:
     dependencies:
@@ -1560,7 +1559,6 @@ snapshots:
       minimatch: 3.1.5
       once: 1.4.0
       path-is-absolute: 1.0.1
-    optional: true
 
   graceful-fs@4.2.11: {}
 
@@ -1576,10 +1574,8 @@ snapshots:
     dependencies:
       once: 1.4.0
       wrappy: 1.0.2
-    optional: true
 
-  inherits@2.0.4:
-    optional: true
+  inherits@2.0.4: {}
 
   ink@7.1.1(react@19.3.1):
     dependencies:
@@ -1698,7 +1694,6 @@ snapshots:
   minimatch@3.1.5:
     dependencies:
       brace-expansion: 1.1.21
-    optional: true
 
   minimist@1.2.8:
     optional: true
@@ -1762,7 +1757,6 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
-    optional: true
 
   onetime@5.1.2:
     dependencies:
@@ -1790,8 +1784,7 @@ snapshots:
   path-exists@4.0.0:
     optional: true
 
-  path-is-absolute@1.0.1:
-    optional: true
+  path-is-absolute@1.0.1: {}
 
   path-key@2.0.1:
     optional: true
@@ -2031,8 +2024,7 @@ snapshots:
       strip-ansi: 7.2.0
     optional: true
 
-  wrappy@1.0.2:
-    optional: true
+  wrappy@1.0.2: {}
 
   ws@8.22.0: {}
 

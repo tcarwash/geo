@@ -72,7 +72,7 @@ export function normalizeState(raw) {
  const next={...DEFAULT_STATE};
  next.base=BASE_MAPS.some(b=>b.id===raw.base)?raw.base:'atlas';
  const layers=Array.isArray(raw.layers)?raw.layers:[];
- next.layers=LAYERS.map(d=>{const x=layers.find(l=>l&&l.id===d.id);return {id:d.id,on:x?!!x.on:d.on,opacity:clamp(finite(x?.opacity,d.opacity),0,1),showLabels:!!x?.showLabels,...(d.id==='imagery'?{date:imageryDate(x?.date||d.date)}:{})};});
+ next.layers=LAYERS.map(d=>{const x=layers.find(l=>l&&l.id===d.id);return {id:d.id,on:x?!!x.on:d.on,opacity:clamp(finite(x?.opacity,d.opacity),0,1),showLabels:!!x?.showLabels,labelColor:/^#[0-9a-f]{6}$/i.test(x?.labelColor||'')?x.labelColor:'#f2f5f2',labelBackground:/^#[0-9a-f]{6}$/i.test(x?.labelBackground||'')?x.labelBackground:'#081b28',labelSize:clamp(finite(x?.labelSize,10),8,18),...(d.id==='imagery'?{date:imageryDate(x?.date||d.date)}:{})};});
  next.layers.push(...layers.filter(l=>l?.custom).slice(0,8).map(customLayer));
  const order=layers.map(l=>l?.id);next.layers.sort((a,b)=>(order.includes(a.id)?order.indexOf(a.id):99)-(order.includes(b.id)?order.indexOf(b.id):99));
  next.widgets=(Array.isArray(raw.widgets)?raw.widgets:[]).slice(0,12).filter(w=>w&&['note','clock','station','iframe','space-weather','legend'].includes(w.type)&&(w.type!=='iframe'||safeEmbed(w.url))).map((w,i)=>({...w,id:typeof w.id==='string'?w.id:`widget-${i}`,title:String(w.title||'Widget').slice(0,100),zone:validZone(w.zone)?w.zone:'UTC',x:clamp(finite(w.x,120),0,10000),y:clamp(finite(w.y,180),90,10000),width:clamp(finite(w.width,280),220,1600),height:clamp(finite(w.height,180),150,1200),text:String(w.text||'').slice(0,10000),...(w.type==='iframe'?{url:safeEmbed(w.url)}:{})}));
@@ -121,17 +121,29 @@ export function greatCircle(from,to,steps=64) {
  return paths;
 }
 
+export function customLayerKey(layer) {
+ return JSON.stringify({kind:layer.kind,url:layer.url,wmsLayers:layer.wmsLayers,data:layer.data,attribution:layer.attribution,color:layer.color,labelProperty:layer.labelProperty,labelColor:layer.labelColor,labelBackground:layer.labelBackground,labelSize:layer.labelSize,pointSize:layer.pointSize,lineWidth:layer.lineWidth,fillOpacity:layer.fillOpacity,showLabels:layer.showLabels});
+}
+
+export function customGeoJsonTooltipOptions(layer) {
+ return {permanent:!!layer.showLabels,direction:'right',className:'map-point-label',opacity:.95,offset:[7,0]};
+}
+
 export function customLayer(raw) {
- if(!raw||!['xyz','wms','geojson'].includes(raw.kind))throw new Error('Choose XYZ tiles, WMS, or GeoJSON.');
+ if(!raw||!['xyz','wms','geojson','push'].includes(raw.kind))throw new Error('Choose XYZ tiles, WMS, GeoJSON, or API-pushed GeoJSON.');
  const name=String(raw.name||'').trim(),attribution=String(raw.attribution||'').trim();
  if(!name||!attribution)throw new Error('A source name and attribution are required.');
+ const sourceId=String(raw.sourceId||'').trim();
+ if(raw.kind==='push'&&!/^[a-z0-9][a-z0-9-]{0,47}$/.test(sourceId))throw new Error('Use a lowercase source ID with letters, numbers, and hyphens (48 characters maximum).');
  let url;
- if(raw.kind!=='geojson'){
+ if(!['geojson','push'].includes(raw.kind)){
   url=String(raw.url||'').trim();const parsed=new URL(url.replace(/\{[a-z]+\}/gi,'0'));
   if(!['https:','http:'].includes(parsed.protocol)||parsed.username||parsed.password)throw new Error('Use an HTTP/HTTPS URL without credentials.');
   if([...parsed.searchParams.keys()].some(k=>/token|secret|key|password|auth|credential/i.test(k)))throw new Error('Credential-bearing URLs cannot be saved in layouts.');
   if(raw.kind==='xyz'&&!['{z}','{x}','{y}'].every(t=>url.includes(t)))throw new Error('XYZ templates must include {z}, {x}, and {y}.');
   if(raw.kind==='wms'&&!String(raw.wmsLayers||'').trim())throw new Error('Enter the WMS layer identifier.');
  }
- return {id:typeof raw.id==='string'&&/^custom-[a-z0-9-]+$/i.test(raw.id)?raw.id:`custom-${globalThis.crypto.randomUUID()}`,custom:true,kind:raw.kind,name:name.slice(0,100),attribution:attribution.slice(0,500),subtitle:`${raw.kind.toUpperCase()} · custom source`,icon:raw.kind==='geojson'?'Route':'Layers3',color:'#84cfce',on:raw.on!==false,opacity:clamp(Number.isFinite(+raw.opacity)?+raw.opacity:.65,0,1),...(url?{url}:{}),...(raw.kind==='wms'?{wmsLayers:String(raw.wmsLayers).trim()}:{ }),...(raw.kind==='geojson'?{data:validateDrawings(raw.data)}:{})};
+ const color=value=>/^#[0-9a-f]{6}$/i.test(value||'')?value:'#84cfce';
+ const id=raw.kind==='push'?`local-${sourceId}`:typeof raw.id==='string'&&/^custom-[a-z0-9-]+$/i.test(raw.id)?raw.id:`custom-${globalThis.crypto.randomUUID()}`;
+ return {id,...(raw.kind==='push'?{sourceId}:{}),custom:true,kind:raw.kind,name:name.slice(0,100),attribution:attribution.slice(0,500),subtitle:raw.kind==='push'?'GeoJSON · API push · local source':`${raw.kind.toUpperCase()} · custom source`,icon:raw.kind==='geojson'?'Route':raw.kind==='push'?'RadioTower':'Layers3',color:color(raw.color),labelColor:color(raw.labelColor||'#f2f5f2'),labelBackground:color(raw.labelBackground||'#081b28'),labelSize:clamp(finite(raw.labelSize,10),8,18),pointSize:clamp(finite(raw.pointSize,5),2,18),lineWidth:clamp(finite(raw.lineWidth,2),1,8),fillOpacity:clamp(finite(raw.fillOpacity,.18),0,.8),on:raw.on!==false,showLabels:!!raw.showLabels,opacity:clamp(Number.isFinite(+raw.opacity)?+raw.opacity:.65,0,1),...(url?{url}:{}),...(raw.kind==='wms'?{wmsLayers:String(raw.wmsLayers).trim()}:{ }),...(raw.kind==='geojson'?{data:validateDrawings(raw.data)}:{})};
 }

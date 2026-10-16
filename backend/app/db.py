@@ -99,6 +99,14 @@ def initialize(path: Path | None = None) -> None:
             if "schema_version" not in columns:
                 conn.execute("ALTER TABLE layouts ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 1")
             conn.execute("INSERT INTO schema_migrations(version,applied_at) VALUES(3,?)", (iso(),))
+            current = 3
+        if current < 4:
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS local_source_data (
+                    source_id TEXT PRIMARY KEY, collection_json TEXT NOT NULL, updated_at TEXT NOT NULL
+                )"""
+            )
+            conn.execute("INSERT INTO schema_migrations(version,applied_at) VALUES(4,?)", (iso(),))
         conn.commit()
     finally:
         conn.close()

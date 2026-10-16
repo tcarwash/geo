@@ -5,11 +5,13 @@ import hmac
 import json
 import logging
 import os
+import re
 import sqlite3
 import uuid
 import xml.etree.ElementTree as ET
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -23,10 +25,13 @@ from . import adif, atlas, db, environment, sources, transport, wsjtx
 from .config import settings
 from .desktop import mount_frontend, prop_router
 from .feed_stream import PUBLIC_FEED_ROUTES, FeedStreamHub, parse_topics
-from .schemas import DrawingUpdate, LayoutCreate, LayoutUpdate, SettingsUpdate
+from .schemas import DrawingUpdate, FeatureCollection, LayoutCreate, LayoutUpdate, SettingsUpdate
 
 logger = logging.getLogger("geo.api")
 MAX_LAYOUT_BYTES = 1_000_000
+MAX_LOCAL_SOURCES = 8
+LOCAL_SOURCE_STALE_SECONDS = 300
+LOCAL_SOURCE_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,63}\Z")
 PUBLIC_DISABLED_LAYERS = ("contacts", "pskreporter", "pota", "wsjtx")
 CDN_CACHEABLE_PUBLIC_PATHS = {
     "/api/v1/layers",
@@ -140,6 +145,37 @@ async def browser_cache_policy(request: Request, call_next):
 
 def _now() -> str:
     return db.iso()
+
+
+def _local_source_id(value: str) -> str:
+    if not LOCAL_SOURCE_ID.fullmatch(value):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_local_source_id", "message": "Source IDs must be lowercase letters, numbers, or hyphens (64 characters maximum)."},
+        )
+    return value
+
+
+def _local_source_envelope(source_id: str, collection: dict[str, Any], updated_at: str | None) -> dict[str, Any]:
+    now = datetime.now(UTC)
+    updated = datetime.fromisoformat(updated_at) if updated_at else None
+    stale = bool(updated and now - updated > timedelta(seconds=LOCAL_SOURCE_STALE_SECONDS))
+    return {
+        "source": f"local:{source_id}",
+        "kind": "user",
+        "fetchedAt": updated_at,
+        "dataTime": None,
+        "validFrom": None,
+        "validTo": None,
+        "expiresAt": db.iso((updated or now) + timedelta(seconds=LOCAL_SOURCE_STALE_SECONDS)),
+        "status": "stale" if stale else "current" if updated else "waiting",
+        "attribution": "Operator-provided local data",
+        "documentationUrl": "",
+        "coverage": "User-configured local source",
+        "units": {},
+        "staleReason": "No update received in the last five minutes." if stale else None,
+        "data": collection,
+    }
 
 
 def _json_size(value: Any, maximum: int = MAX_LAYOUT_BYTES) -> None:
@@ -820,6 +856,54 @@ def wsjtx_heard_feed(
         listener_error=request.app.state.wsjtx_listener_error,
         udp_port=settings.wsjtx_udp_port,
     )
+
+
+@app.get("/api/v1/local-sources/{source_id}", tags=["local sources"], dependencies=[Depends(_private_state_access)])
+def get_local_source(source_id: str) -> dict[str, Any]:
+    source_id = _local_source_id(source_id)
+    with db.connection() as conn:
+        row = conn.execute(
+            "SELECT collection_json,updated_at FROM local_source_data WHERE source_id=?",
+            (source_id,),
+        ).fetchone()
+    if row is None:
+        return _local_source_envelope(source_id, {"type": "FeatureCollection", "features": []}, None)
+    return _local_source_envelope(source_id, db.loads(row["collection_json"]), row["updated_at"])
+
+
+@app.post("/api/v1/local-sources/{source_id}/data", tags=["local sources"], dependencies=[Depends(_edit_access)])
+def push_local_source(source_id: str, collection: FeatureCollection) -> dict[str, Any]:
+    source_id = _local_source_id(source_id)
+    value = collection.model_dump()
+    updated_at = _now()
+    with db.connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        exists = conn.execute(
+            "SELECT 1 FROM local_source_data WHERE source_id=?", (source_id,)
+        ).fetchone()
+        count = conn.execute("SELECT COUNT(*) AS n FROM local_source_data").fetchone()["n"]
+        if exists is None and count >= MAX_LOCAL_SOURCES:
+            conn.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "local_source_limit", "message": "This instance already has eight local data sources."},
+            )
+        conn.execute(
+            """INSERT INTO local_source_data(source_id,collection_json,updated_at) VALUES(?,?,?)
+               ON CONFLICT(source_id) DO UPDATE SET collection_json=excluded.collection_json,
+               updated_at=excluded.updated_at""",
+            (source_id, db.dumps(value), updated_at),
+        )
+        conn.commit()
+    return _local_source_envelope(source_id, value, updated_at)
+
+
+@app.delete("/api/v1/local-sources/{source_id}/data", status_code=204, tags=["local sources"], dependencies=[Depends(_edit_access)])
+def clear_local_source(source_id: str) -> Response:
+    source_id = _local_source_id(source_id)
+    with db.connection() as conn:
+        conn.execute("DELETE FROM local_source_data WHERE source_id=?", (source_id,))
+    return Response(status_code=204)
 
 
 @app.get("/api/v1/rbn-spots", tags=["radio"])

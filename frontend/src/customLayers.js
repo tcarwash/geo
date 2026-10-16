@@ -1,6 +1,7 @@
 import L from 'leaflet';
 import {worldCopies} from './worldCopies.js';
 import {contrastInfraredPixels} from './infraredContrast.js';
+import {customGeoJsonTooltipOptions} from './core.js';
 const text=s=>{const n=document.createElement('span');n.textContent=s;return n};
 function cloudLayer(definition,options,pane){
  const layer=L.tileLayer.wms(definition.url,{...options,pane,attribution:text(definition.attribution||options.attribution).innerHTML,layers:definition.wmsLayers,...(definition.wmsTime?{time:definition.wmsTime}:{}),...(definition.crs?{crs:definition.crs}:{}),format:'image/png',transparent:true,version:'1.1.1',maxZoom:8});
@@ -36,7 +37,7 @@ export function attachCustomLayer(map,definition,pane,onStatus){
   return()=>layers.forEach(layer=>{layer.off();map.removeLayer(layer)});
  }
  if(definition.kind==='geojson'){
-  layer=L.geoJSON(worldCopies(definition.data),{...options,style:{color:definition.color,weight:1.5,fillOpacity:.15},pointToLayer:(f,ll)=>L.circleMarker(ll,{...options,radius:4,color:definition.color}),onEachFeature:(f,l)=>l.bindTooltip(text(f.properties?.name||definition.name))});
+  layer=L.geoJSON(worldCopies(definition.data),{...options,style:{color:definition.color,weight:definition.lineWidth||1.5,fillColor:definition.color,fillOpacity:definition.fillOpacity??.15},pointToLayer:(feature,latlng)=>L.circleMarker(latlng,{...options,radius:definition.pointSize||4,color:definition.color,fillColor:definition.color,fillOpacity:.85}),onEachFeature:(feature,layer)=>{const tooltip=layer.bindTooltip(text(feature.properties?.[definition.labelProperty]||feature.properties?.name||definition.name),customGeoJsonTooltipOptions(definition));tooltip.on('add',event=>{const element=event.tooltip.getElement();if(element){element.style.color=definition.labelColor||'';element.style.backgroundColor=definition.labelBackground||'';element.style.fontSize=definition.labelSize?`${definition.labelSize}px`:'';}});}});
  }else if(definition.kind==='wms'||definition.kind==='cloud-wms'||definition.kind==='contrast-wms'||definition.kind==='night-lights-wms'){
   layer=L.tileLayer.wms(definition.url,{...options,layers:definition.wmsLayers,...(definition.wmsTime?{time:definition.wmsTime}:{}),...(definition.crs?{crs:definition.crs}:{}),format:'image/png',transparent:true,version:'1.1.1',maxZoom:8});
   if(definition.kind==='cloud-wms'){
