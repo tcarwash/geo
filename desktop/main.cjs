@@ -110,28 +110,33 @@ async function createWindow(origin) {
   await windowRef.loadURL(`${origin}/`);
 }
 
-Menu.setApplicationMenu(null);
-app.whenReady().then(async () => {
-  try {
-    const origin = await startBackend();
-    await createWindow(origin);
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow(origin).catch(error => {
-        dialog.showErrorBox('Geo could not open', error.message);
+// Installer events must exit before starting the local backend or opening a window.
+if (require('electron-squirrel-startup')) {
+  app.quit();
+} else {
+  Menu.setApplicationMenu(null);
+  app.whenReady().then(async () => {
+    try {
+      const origin = await startBackend();
+      await createWindow(origin);
+      app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) createWindow(origin).catch(error => {
+          dialog.showErrorBox('Geo could not open', error.message);
+        });
       });
-    });
-  } catch (error) {
-    dialog.showErrorBox('Geo could not start', error.message);
-    app.quit();
-  }
-});
+    } catch (error) {
+      dialog.showErrorBox('Geo could not start', error.message);
+      app.quit();
+    }
+  });
 
-app.on('before-quit', () => {
-  quitting = true;
-  if (backend && backend.exitCode === null) backend.kill();
-  backendLog?.end();
-});
+  app.on('before-quit', () => {
+    quitting = true;
+    if (backend && backend.exitCode === null) backend.kill();
+    backendLog?.end();
+  });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+  });
+}

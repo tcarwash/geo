@@ -81,6 +81,12 @@ jobs:
         uses: astral-sh/setup-uv@v6
       - name: Install Python 3.12
         run: uv python install 3.12
+      - name: Install Electron packaging dependencies
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+      - name: Check packaging tools and metadata
+        working-directory: desktop
+        run: pnpm packaging:check
       - name: Build shared Geo frontend
         working-directory: frontend
         run: |
@@ -91,9 +97,9 @@ jobs:
         run: |
           uv sync --python 3.12 --locked --no-dev --extra desktop
           uv run --python 3.12 --no-dev --extra desktop python build_desktop.py
-      - name: Install Electron packaging dependencies
+      - name: Smoke test the frozen backend
         working-directory: desktop
-        run: pnpm install --frozen-lockfile
+        run: pnpm sidecar:check
       - name: Package Geo desktop app
         working-directory: desktop
         run: pnpm make
@@ -126,4 +132,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: release-assets/**/*
+          fail_on_unmatched_files: true
           generate_release_notes: true

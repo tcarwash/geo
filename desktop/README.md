@@ -15,6 +15,7 @@ uv sync --extra dev --extra desktop
 uv run python build_desktop.py
 cd ../desktop
 pnpm install
+pnpm packaging:check
 pnpm start
 ```
 
@@ -27,5 +28,9 @@ Geo starts in private mode so local-only layers remain available. The existing W
 ## CI and releases
 
 `.github/workflows/desktop.yml` runs the shared frontend/backend tests, builds native packages on Linux, Windows, and macOS runners, and uploads CI artifacts. A `v*` tag also publishes those packages to its GitHub Release. Builds are currently unsigned; macOS notarization and Windows signing require maintainer credentials and are not configured. The existing Docker image workflow remains separate but uses the same version tag.
+
+Packaging dependencies install with pnpm 10.7.0 and a frozen lockfile. The explicit build-script allowlist includes `fs-xattr` and `macos-alias` for DMGs and `electron-winstaller` for Windows tools; unapproved scripts fail installation. `pnpm packaging:check` loads the native DMG modules on macOS, checks Windows installer tools, and checks maker prerequisites before the expensive builds. On release tags, it also requires the tag version to match `desktop/package.json`.
+
+Each platform runs `pnpm sidecar:check` against its frozen backend to verify startup, the private API, and serving the built frontend. Linux additionally runs the packaged Electron browser smoke check. Windows installer interactions and macOS DMG mounting still need manual validation on those platforms. To build locally after producing the frontend and sidecar, run `pnpm sidecar:check` and `pnpm make`; outputs are in `desktop/out/make`.
 
 The current Political Atlas and Grayscale maps are local vector layers. Remote imagery/raster layers still need a connection; managed offline tile packs are a separate future feature.

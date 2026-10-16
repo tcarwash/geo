@@ -1,1 +1,41 @@
-{"name":"geo","productName":"Geo","version":"0.1.0","private":true,"description":"Desktop package for the Geo single-user atlas","main":"main.cjs","packageManager":"pnpm@10.7.0","scripts":{"start":"electron .","package":"electron-forge package","make":"electron-forge make","check":"node --test tests/*.test.cjs"},"devDependencies":{"@electron-forge/cli":"8.0.1","@electron-forge/maker-deb":"8.0.1","@electron-forge/maker-dmg":"8.0.1","@electron-forge/maker-squirrel":"8.0.1","@electron-forge/maker-zip":"8.0.1","electron":"44.7.2","glob":"7.2.3","lodash":"4.18.1"},"config":{"forge":"./forge.config.cjs"},"pnpm":{"onlyBuiltDependencies":["electron-winstaller","macos-alias"]}}
+{
+  "name": "geo",
+  "productName": "Geo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop package for the Geo single-user atlas",
+  "main": "main.cjs",
+  "packageManager": "pnpm@10.7.0",
+  "scripts": {
+    "start": "electron .",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "check": "node --test tests/*.test.cjs",
+    "packaging:check": "node scripts/check-packaging.cjs",
+    "sidecar:check": "node scripts/check-sidecar.cjs"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "8.0.1",
+    "@electron-forge/maker-deb": "8.0.1",
+    "@electron-forge/maker-dmg": "8.0.1",
+    "@electron-forge/maker-squirrel": "8.0.1",
+    "@electron-forge/maker-zip": "8.0.1",
+    "electron": "44.7.2",
+    "glob": "7.2.3",
+    "lodash": "4.18.1"
+  },
+  "config": {
+    "forge": "./forge.config.cjs"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron-winstaller",
+      "macos-alias",
+      "fs-xattr"
+    ]
+  },
+  "author": "Tyler F. Carr",
+  "dependencies": {
+    "electron-squirrel-startup": "1.0.1"
+  }
+}
