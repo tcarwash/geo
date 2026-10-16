@@ -29,6 +29,9 @@ importers:
       glob:
         specifier: 7.2.3
         version: 7.2.3
+      lodash:
+        specifier: 4.18.1
+        version: 4.18.1
 
 packages:
 
@@ -1664,8 +1667,7 @@ snapshots:
       log-update: 8.0.0
       wrap-ansi: 10.0.2
 
-  lodash@4.18.1:
-    optional: true
+  lodash@4.18.1: {}
 
   log-update@8.0.0:
     dependencies:
